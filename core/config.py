@@ -36,6 +36,12 @@ try:
 except ValueError:
     SCRAPE_INTERVAL = 300
 
+    # Add this near the other os.getenv calls
+try:
+    ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
+except ValueError:
+    ADMIN_ID = 0
+
 # ==============================
 # LOGGING
 # ==============================
