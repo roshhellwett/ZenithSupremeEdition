@@ -14,30 +14,27 @@ logger = logging.getLogger("PIPELINE")
 FIRST_BOOT_LIMIT = 20
 HASH_CACHE_LIMIT = 5000
 
-
 async def start_pipeline():
-
     logger.info("PIPELINE STARTED")
-
-    # ===== WAIT TELEGRAM READY =====
     await asyncio.sleep(5)
 
     while True:
-
         db = None
-
         try:
             logger.info("SCRAPE CYCLE START")
-
             items = scrape_all_sources()
 
             if not items:
                 await asyncio.sleep(SCRAPE_INTERVAL)
                 continue
 
+            # --- CHRONOLOGICAL SORT ---
+            # Sort items by published_date (Oldest to Newest)
+            # This ensures oldest items get lower IDs in DB and are sent first.
+            items.sort(key=lambda x: x['published_date'])
+
             db = SessionLocal()
 
-            # ===== LIMIT HASH CACHE SIZE =====
             existing_hashes = {
                 h for (h,) in db.query(Notification.content_hash)
                 .order_by(Notification.id.desc())
@@ -53,46 +50,34 @@ async def start_pipeline():
                 if not h or h in existing_hashes:
                     continue
 
-                # Ensure defaults
-                item.setdefault("scraped_at", datetime.utcnow())
-                item.setdefault("published_date", datetime.utcnow())
-
-                # Prepare DB object but DO NOT ADD yet
                 notif = Notification(**item)
                 notifications_to_save.append(notif)
-                
                 new_notifications.append(item)
                 existing_hashes.add(h)
 
             logger.info(f"NEW NOTIFICATIONS {len(new_notifications)}")
 
             if not new_notifications:
-                db.close() # Close manually if continuing
+                db.close()
                 await asyncio.sleep(SCRAPE_INTERVAL)
                 continue
 
-            # ===== FIRST RUN CHECK =====
             first_flag = db.query(SystemFlag).filter_by(key="FIRST_RUN_DONE").first()
             
             msgs_to_send = []
-
             if not first_flag:
                 logger.info("FIRST BOOT MODE ACTIVE - LIMITING BROADCAST")
                 limited_items = new_notifications[:FIRST_BOOT_LIMIT]
                 msgs_to_send = [format_message(n) for n in limited_items]
-                
-                # Mark first run as done
                 db.add(SystemFlag(key="FIRST_RUN_DONE", value="1"))
             else:
                 msgs_to_send = [format_message(n) for n in new_notifications]
 
-            # ===== 1. BROADCAST FIRST =====
-            # We send first. If we crash here, we haven't saved to DB yet, 
-            # so we will retry next loop. This prevents "Saved but not Sent" bug.
+            # 1. BROADCAST FIRST (HTML Mode)
             if msgs_to_send:
                 await broadcast_channel(msgs_to_send)
 
-            # ===== 2. SAVE TO DB AFTER SENDING =====
+            # 2. SAVE TO DB AFTER SENDING
             for n_obj in notifications_to_save:
                 db.add(n_obj)
             
@@ -101,12 +86,9 @@ async def start_pipeline():
 
         except Exception as e:
             logger.error(f"PIPELINE ERROR {e}", exc_info=True)
-            if db:
-                db.rollback()
-
+            if db: db.rollback()
         finally:
-            if db:
-                db.close()
+            if db: db.close()
 
         logger.info("SCRAPE CYCLE DONE")
         await asyncio.sleep(SCRAPE_INTERVAL)
