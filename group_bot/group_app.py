@@ -17,7 +17,6 @@ async def start_group_bot():
         logger.error("GROUP_BOT_TOKEN missing!")
         return
 
-    # High-stability network settings [cite: 46]
     app = ApplicationBuilder().token(token).read_timeout(30).connect_timeout(30).build()
 
     async def group_monitor_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -29,8 +28,6 @@ async def start_group_bot():
         chat_id = update.effective_chat.id
         chat_title = update.effective_chat.title or "Private Group"
 
-        # 1. Forensic Check (Abuse and Flooding) [cite: 41, 44, 47]
-        # FIX: Added 'await' because is_inappropriate is now an async function
         violation, reason = await is_inappropriate(text)
         
         if not violation:
@@ -38,14 +35,11 @@ async def start_group_bot():
 
         if violation:
             try:
-                # Delete the offensive message immediately [cite: 44, 47, 48]
                 await update.message.delete()
                 
-                # Check for strikes and Mute if necessary [cite: 48]
                 hit_limit = add_strike(user.id)
                 
                 if hit_limit:
-                    # Execute 1-Hour Mute (Telegram Restriction) [cite: 49, 61]
                     until_date = int(time.time() + MUTE_DURATION_SECONDS)
                     await context.bot.restrict_chat_member(
                         chat_id=chat_id,
@@ -56,7 +50,6 @@ async def start_group_bot():
                     
                     msg_text = f"🚫 <b>SUPREME MUTE APPLIED</b>\n\nUser: @{user.username}\nAction: <b>Restricted for 1 Hour</b>\nReason: Repeated Violations"
                     
-                    # PRIVATE ADMIN NOTIFICATION [cite: 52]
                     admin_report = (
                         f"🛡️ <b>SECURITY ALERT: USER MUTED</b>\n"
                         f"<b>Group:</b> {chat_title}\n"
@@ -74,17 +67,14 @@ async def start_group_bot():
                         f"Reason: {reason}"
                     )
 
-                # Send warning to the group [cite: 46, 55]
                 warn_msg = await context.bot.send_message(chat_id=chat_id, text=msg_text, parse_mode="HTML")
                 
-                # Ghost Cleanup after 10 seconds [cite: 51, 56]
                 await asyncio.sleep(10)
                 await warn_msg.delete()
-                
+            
             except Exception as e:
                 logger.error(f"Supreme Enforcement Error: {e}")
 
-    # Monitor all text messages in groups [cite: 47]
     app.add_handler(MessageHandler(filters.ChatType.GROUPS & filters.TEXT, group_monitor_handler))
 
     await app.initialize()

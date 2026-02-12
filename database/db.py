@@ -5,7 +5,7 @@ from core.config import DATABASE_URL
 
 logger = logging.getLogger("DATABASE")
 
-# FIX: Force the async driver even if the user provides a standard sqlite URL 
+# Security Fix: Force the async driver internally 
 if DATABASE_URL.startswith("sqlite:///"):
     ASYNC_DB_URL = DATABASE_URL.replace("sqlite:///", "sqlite+aiosqlite:///")
 elif DATABASE_URL.startswith("sqlite://"):
@@ -13,8 +13,7 @@ elif DATABASE_URL.startswith("sqlite://"):
 else:
     ASYNC_DB_URL = DATABASE_URL
 
-# ===== ASYNC ENGINE =====
-# pool_pre_ping ensures the connection is alive before use 
+# Async Engine with health checks
 engine = create_async_engine(
     ASYNC_DB_URL,
     pool_pre_ping=True,
@@ -22,8 +21,7 @@ engine = create_async_engine(
     echo=False
 )
 
-# ===== ASYNC SESSION FACTORY =====
-# This produces sessions that support the 'async with' protocol 
+# Mandatory Async Session Factory
 AsyncSessionLocal = sessionmaker(
     engine, 
     class_=AsyncSession, 

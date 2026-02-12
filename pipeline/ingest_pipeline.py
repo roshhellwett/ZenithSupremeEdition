@@ -21,11 +21,9 @@ async def start_pipeline():
         logger.info("🔄 Starting new scrape cycle...")
         
         try:
-            # Process each university source individually
             for key, config in URLS.items():
                 logger.info(f"📡 Scraping source: {key} ({config['source']})")
                 
-                # 1. Scrape source with error isolation
                 try:
                     items = await scrape_source(key, config)
                 except Exception as e:
@@ -38,30 +36,25 @@ async def start_pipeline():
 
                 logger.info(f"✅ FOUND {len(items)} ITEMS {key}. CHECKING DATABASE...")
                 
-                # 2. Database Sync using Async Context Manager
                 async with AsyncSessionLocal() as db:
                     new_count = 0
                     for item in items:
-                        # Non-blocking existence check using content hash
                         stmt = select(Notification.id).where(Notification.content_hash == item['content_hash'])
                         result = await db.execute(stmt)
                         exists = result.scalar()
 
                         if not exists:
                             db.add(Notification(**item))
-                            await db.commit() # Non-blocking commit
+                            await db.commit() 
                             
-                            # 3. Broadcast to Telegram Channel
                             await broadcast_channel([format_message(item)])
                             new_count += 1
                     
                     if new_count > 0:
                         logger.info(f"📢 BROADCASTED {new_count} NEW NOTICES FROM {key}")
                 
-                # Politeness delay between different source requests
                 await asyncio.sleep(3)
             
-            # 4. Health Check Reporting
             health = get_source_health()
             for src, fails in health.items():
                 if fails >= 3:
@@ -75,8 +68,6 @@ async def start_pipeline():
         except Exception as e:
             logger.error(f"❌ GLOBAL PIPELINE LOOP ERROR: {e}")
         
-        # 5. Dynamic Sleep Calculation
-        # Ensures the bot doesn't "drift" and respects the SCRAPE_INTERVAL accurately
         elapsed = asyncio.get_event_loop().time() - cycle_start
         sleep_time = max(10, SCRAPE_INTERVAL - elapsed)
         

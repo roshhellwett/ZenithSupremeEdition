@@ -18,6 +18,7 @@ if not BOT_TOKEN:
 # ==============================
 # DATABASE CONFIGURATION
 # ==============================
+# Forced async driver for SQLAlchemy 2.0 compatibility
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///makaut.db")
 
 # ==============================
@@ -25,8 +26,8 @@ DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///makaut.db")
 # ==============================
 SCRAPE_INTERVAL = int(os.getenv("SCRAPE_INTERVAL", "300"))
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
-TARGET_YEAR = 2026  # Centralized Gatekeeper Year
+TARGET_YEAR = 2025  # Centralized Gatekeeper Year
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
-# SSL Safety: Targeted exemptions for known broken university certs
+# SSL Safety: Targeted exemptions for known legacy university certs 
 SSL_VERIFY_EXEMPT = ["makautexam.net", "www.makautexam.net"]

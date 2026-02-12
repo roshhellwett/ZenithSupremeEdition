@@ -13,7 +13,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     formatted_time = now_ist.strftime("%d %b %Y %I:%M %p")
 
     text = f"""
-✅ <b>SUPREME SYSTEM ONLINE</b>
+✅ <b>SYSTEM ONLINE</b>
 
 <b>Time (IST):</b> {formatted_time}
 <b>Status:</b> Monitoring 24/7

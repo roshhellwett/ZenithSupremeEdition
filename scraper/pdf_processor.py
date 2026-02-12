@@ -41,7 +41,6 @@ def _process_pdf_sync(pdf_bytes):
 
 async def get_date_from_pdf(pdf_url):
     """Asynchronous wrapper for PDF downloading and thread-safe parsing."""
-    # Targeted SSL verification
     verify = not any(domain in pdf_url for domain in SSL_VERIFY_EXEMPT)
     
     try:
