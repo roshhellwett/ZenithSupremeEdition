@@ -18,6 +18,7 @@ async def start_admin_bot():
     app.add_handler(CommandHandler("update", update_system))
     app.add_handler(CommandHandler("backup", send_db_backup))
     app.add_handler(CommandHandler("health", health_check))
+    app.add_handler(CommandHandler("maintenance", maintenance_mode))
 
     await app.initialize()
     await app.start()

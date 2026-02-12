@@ -13,10 +13,17 @@ from bot.telegram_app import get_bot
 logger = logging.getLogger("PIPELINE")
 
 async def start_pipeline():
-    """Main background task with heartbeat monitoring and dynamic scheduling."""
+    """Main background task with heartbeat monitoring and maintenance suspension."""
     logger.info("🚀 SUPREME ASYNC PIPELINE STARTED")
     
     while True:
+        # Maintenance Lock Check: Pauses scraping if Admin has engaged maintenance mode
+        from admin_bot.handlers import is_maintenance
+        if is_maintenance:
+            logger.info("⏸️ PIPELINE PAUSED: Maintenance Mode Active")
+            await asyncio.sleep(10)
+            continue
+
         cycle_start = asyncio.get_event_loop().time()
         logger.info("🔄 Starting new scrape cycle...")
         
@@ -39,6 +46,7 @@ async def start_pipeline():
                 async with AsyncSessionLocal() as db:
                     new_count = 0
                     for item in items:
+                        # Check for existing notice using hash deduplication
                         stmt = select(Notification.id).where(Notification.content_hash == item['content_hash'])
                         result = await db.execute(stmt)
                         exists = result.scalar()
@@ -47,6 +55,7 @@ async def start_pipeline():
                             db.add(Notification(**item))
                             await db.commit() 
                             
+                            # Deliver to notification channel
                             await broadcast_channel([format_message(item)])
                             new_count += 1
                     
@@ -55,22 +64,28 @@ async def start_pipeline():
                 
                 await asyncio.sleep(3)
             
+            # Health Check: Alert Admin if a university source fails repeatedly
             health = get_source_health()
             for src, fails in health.items():
                 if fails >= 3:
-                    logger.warning(f"⚠️ SOURCE {src} IS REPORTING FALIURE: {fails}")
+                    logger.warning(f"⚠️ SOURCE {src} IS REPORTING FAILURE: {fails}")
                     try:
                         bot = get_bot()
-                        await bot.send_message(ADMIN_ID, f"🚨 <b>SOURCE DOWN ALERT</b>\nSource: {src}\nFails: {fails}", parse_mode="HTML")
+                        await bot.send_message(
+                            ADMIN_ID, 
+                            f"🚨 <b>SOURCE DOWN ALERT</b>\nSource: {src}\nFails: {fails}", 
+                            parse_mode="HTML"
+                        )
                     except:
                         pass
                 
         except Exception as e:
             logger.error(f"❌ GLOBAL PIPELINE LOOP ERROR: {e}")
         
+        # Dynamic Scheduling: Calculate sleep time based on cycle duration
         elapsed = asyncio.get_event_loop().time() - cycle_start
         sleep_time = max(10, SCRAPE_INTERVAL - elapsed)
         
         logger.info(f"💤 CYCLE COMPLETE IN {int(elapsed)}s. NEXT CYCLE IN {int(sleep_time)}s...")
         await asyncio.sleep(sleep_time)
-            #@academictelebotbyroshhellwett
+        #@academictelebotbyroshhellwett
