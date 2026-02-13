@@ -1,28 +1,17 @@
 import logging
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.pool import StaticPool
+from database.db import engine, AsyncSessionLocal, Base
 
-logger = logging.getLogger("SECURITY_DB")
+# =================================================================
+# ⚠️ DEPRECATED MODULE
+# This file exists only for backward compatibility during migration.
+# It redirects all calls to the main PostgreSQL engine in database.db.
+# =================================================================
 
-# Isolated database for moderation data
-SECURITY_DATABASE_URL = "sqlite+aiosqlite:///security.db"
+logger = logging.getLogger("SECURITY_DB_LEGACY")
+logger.warning("⚠️ LEGACY IMPORT: database.security_db is deprecated. Redirecting to main PostgreSQL engine.")
 
-security_engine = create_async_engine(
-    SECURITY_DATABASE_URL,
-    connect_args={"check_same_thread": False},
-    poolclass=StaticPool,
-    future=True,
-    echo=False
-)
-
-SecuritySessionLocal = sessionmaker(
-    security_engine, 
-    class_=AsyncSession, 
-    expire_on_commit=False,
-    autoflush=False
-)
-
-SecurityBase = declarative_base()
-logger.info("SECURITY DATABASE ENGINE READY (Isolated Storage: security.db)")
-#@academictelebotbyroshhellwett
+# Redirect legacy objects to the new unified PostgreSQL connection
+# This prevents "No module named 'aiosqlite'" errors.
+security_engine = engine
+SecuritySessionLocal = AsyncSessionLocal
+SecurityBase = Base
