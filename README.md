@@ -164,14 +164,6 @@ AcademicTeleBot aims to evolve into a **unified academic intelligence platform**
 
 ---
 
-## 📜 License
-Specify your license here (MIT / Apache 2.0 / Proprietary).
-
----
-
-## 🤝 Contributing
-Contributions, suggestions, and architecture discussions are welcome.
-
 ---
 ### 💬 Telegram Group
 👉 [Join TeleAcademic Group](https://t.me/teleacademicgroup)
