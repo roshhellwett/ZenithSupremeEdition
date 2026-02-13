@@ -3,11 +3,10 @@ import logging
 from datetime import datetime
 from dotenv import load_dotenv
 
-# Load local .env for testing, but Railway env vars take precedence
 load_dotenv()
 
 # ==============================
-# TELEGRAM TOKENS
+# TELEGRAM TOKENS & SECURITY
 # ==============================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 SEARCH_BOT_TOKEN = os.getenv("SEARCH_BOT_TOKEN")
@@ -21,7 +20,6 @@ if not BOT_TOKEN:
 # ==============================
 # CLOUD DATABASE CONFIGURATION
 # ==============================
-# Railway provides 'postgres://', but SQLAlchemy requires 'postgresql+asyncpg://'
 _RAW_DB_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///local_backup.db")
 
 if _RAW_DB_URL.startswith("postgres://"):
@@ -37,17 +35,20 @@ else:
 SCRAPE_INTERVAL = int(os.getenv("SCRAPE_INTERVAL", "300"))
 ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
-# FIX: Dynamic Year Configuration
-# Automatically tracks the current year.
-# The scraper will look for [CURRENT_YEAR, CURRENT_YEAR - 1]
-TARGET_YEAR = datetime.now().year
+# DYNAMIC YEAR LOGIC:
+# Automatically accepts notices from the current year AND the previous year
+# (e.g., In 2026, it accepts 2026 and 2025 to cover academic sessions)
+CURRENT_YEAR = datetime.now().year
+TARGET_YEARS = [CURRENT_YEAR, CURRENT_YEAR - 1]
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 # ==============================
-# SECURITY & LIMITS
+# PERFORMANCE & LIMITS
 # ==============================
 SSL_VERIFY_EXEMPT = ["makautexam.net", "www.makautexam.net"]
 REQUEST_TIMEOUT = 30.0
-MAX_PDF_SIZE_MB = 10  # Memory guard
+MAX_PDF_SIZE_MB = 10  # Max size to download
+DB_POOL_SIZE = 5      # Safe limit for Railway Starter Plan
+DB_MAX_OVERFLOW = 10  # Burst buffer
 #@academictelebotbyroshhellwett

@@ -18,7 +18,6 @@ async def group_monitor_handler(update: Update, context):
     user = update.effective_user
     chat_id = update.effective_chat.id
     
-    # DEBUG HEARTBEAT: If you don't see this in your console, the bot can't see the group
     logger.info(f"🛡️ Scanning message from @{user.username}: {text[:30]}")
 
     # 1. Forensic Scan for Abuse

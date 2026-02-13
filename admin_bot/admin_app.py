@@ -26,6 +26,5 @@ async def start_admin_bot():
     
     logger.info("ADMIN CONTROL BOT READY & POLLING")
     
-    # CRITICAL FIX: Keep this coroutine alive forever so the task doesn't finish
     await asyncio.Event().wait()
     #@academictelebotbyroshhellwett

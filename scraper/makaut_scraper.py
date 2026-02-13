@@ -2,13 +2,14 @@ import httpx
 import random
 import logging
 import asyncio
+import time
 from bs4 import BeautifulSoup
 from datetime import datetime
 from urllib.parse import urljoin
 
 from utils.hash_util import generate_hash
 from core.sources import URLS
-from core.config import SSL_VERIFY_EXEMPT, TARGET_YEAR, REQUEST_TIMEOUT
+from core.config import SSL_VERIFY_EXEMPT, TARGET_YEARS, REQUEST_TIMEOUT
 from scraper.date_extractor import extract_date
 from scraper.pdf_processor import get_date_from_pdf
 
@@ -20,7 +21,54 @@ USER_AGENTS = [
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) Chrome/121.0.0.0 Safari/537.36"
 ]
 
-async def build_item(title, url, source_name, date_context=None):
+# CIRCUIT BREAKER STATE
+# Tracks failures per source to prevent infinite error loops
+source_health = {}
+MAX_FAILURES = 3
+COOLDOWN_SECONDS = 1800  # 30 Minutes
+
+def _parse_html_sync(html_content, source_config):
+    """
+    CPU-BOUND TASK: Runs inside a thread to avoid blocking the event loop.
+    Parses HTML and extracts raw links.
+    """
+    soup = BeautifulSoup(html_content, "html.parser")
+    items = []
+    
+    # STRATEGY 1: Table Row Scan (Best for MAKAUT tables)
+    rows = soup.find_all("tr")
+    if len(rows) > 5:
+        for row in rows:
+            link = row.find("a", href=True)
+            if link:
+                full_row_text = row.get_text(" ", strip=True)
+                full_url = urljoin(source_config["url"], link["href"])
+                items.append({
+                    "text": link.get_text(strip=True),
+                    "url": full_url,
+                    "context": full_row_text
+                })
+    
+    # STRATEGY 2: Fallback (Div/List based sites)
+    if not items:
+        container = soup.find("div", {"id": "content"}) or soup.body
+        for a in container.find_all("a", href=True):
+            full_url = urljoin(source_config["url"], a["href"])
+            context = a.parent.get_text(strip=True) if a.parent else ""
+            items.append({
+                "text": a.get_text(strip=True),
+                "url": full_url,
+                "context": context
+            })
+            
+    return items
+
+async def build_item(raw_data, source_name):
+    """Async Processor for individual items."""
+    title = raw_data["text"]
+    url = raw_data["url"]
+    context = raw_data["context"]
+
     if not title or not url: return None
     
     # 1. Forensic Noise Filtering
@@ -30,16 +78,15 @@ async def build_item(title, url, source_name, date_context=None):
 
     # 2. Date Discovery (Title -> Context -> PDF)
     real_date = extract_date(title) 
-    if not real_date and date_context:
-        real_date = extract_date(date_context)
+    if not real_date and context:
+        real_date = extract_date(context)
     
     # 3. Deep Scan (PDF Header Analysis)
     if not real_date and ".pdf" in url.lower():
-        # Only deep scan if it looks like a notice (avoid huge files)
         real_date = await get_date_from_pdf(url)
 
-    # 4. Validity Check (Academic Year Window)
-    if real_date and real_date.year in [TARGET_YEAR, TARGET_YEAR - 1]:
+    # 4. Validity Check (Dynamic Year Window)
+    if real_date and real_date.year in TARGET_YEARS:
         return {
             "title": title.strip(),
             "source": source_name,
@@ -53,6 +100,12 @@ async def build_item(title, url, source_name, date_context=None):
     return None
 
 async def scrape_source(source_key, source_config):
+    # --- CIRCUIT BREAKER CHECK ---
+    health = source_health.get(source_key, {"fails": 0, "next_try": 0})
+    if time.time() < health["next_try"]:
+        # Silently skip to keep logs clean
+        return []
+
     headers = {"User-Agent": random.choice(USER_AGENTS)}
     verify = not any(domain in source_config["url"] for domain in SSL_VERIFY_EXEMPT)
     
@@ -61,53 +114,37 @@ async def scrape_source(source_key, source_config):
         async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT, verify=verify, follow_redirects=True) as client:
             r = await client.get(source_config["url"], headers=headers)
             r.raise_for_status()
-            soup = BeautifulSoup(r.text, "html.parser")
-            
-            items = []
-            
-            # STRATEGY 1: Table Row Scan (Best for MAKAUT tables)
-            rows = soup.find_all("tr")
-            if len(rows) > 5:
-                logger.info(f"🔎 {source_key}: Scanning {len(rows)} table rows...")
-                for row in rows:
-                    link = row.find("a", href=True)
-                    if link:
-                        # Pass the ENTIRE row text as context (contains date column)
-                        full_row_text = row.get_text(" ", strip=True)
-                        full_url = urljoin(source_config["url"], link["href"])
-                        
-                        item = await build_item(
-                            link.get_text(strip=True), 
-                            full_url, 
-                            source_config["source"], 
-                            full_row_text
-                        )
-                        if item: items.append(item)
-            
-            # STRATEGY 2: Fallback (Div/List based sites)
-            if not items:
-                logger.info(f"⚠️ {source_key}: No table rows found, trying fallback scan...")
-                container = soup.find("div", {"id": "content"}) or soup.body
-                for a in container.find_all("a", href=True):
-                    full_url = urljoin(source_config["url"], a["href"])
-                    # Use parent paragraph/div as context
-                    context = a.parent.get_text(strip=True) if a.parent else ""
-                    item = await build_item(
-                        a.get_text(strip=True), 
-                        full_url, 
-                        source_config["source"], 
-                        context
-                    )
-                    if item: items.append(item)
 
-            if items:
-                logger.info(f"✅ {source_key}: Successfully extracted {len(items)} notices.")
-            else:
-                logger.warning(f"⚠️ {source_key}: Found links but NO VALID DATES extracted.")
-                
-            return items
+            raw_items = await asyncio.to_thread(_parse_html_sync, r.text, source_config)
+            
+            logger.info(f"🔎 {source_key}: Analyzing {len(raw_items)} candidates...")
+            
+            valid_items = []
+            for raw in raw_items:
+                item = await build_item(raw, source_config["source"])
+                if item: valid_items.append(item)
+
+            # Success! Reset circuit breaker
+            source_health[source_key] = {"fails": 0, "next_try": 0}
+            
+            if valid_items:
+                logger.info(f"✅ {source_key}: Extracted {len(valid_items)} valid notices.")
+            return valid_items
 
     except Exception as e:
-        logger.error(f"❌ Source Failure [{source_key}]: {e}")
+        # Failure! Update circuit breaker
+        fails = health["fails"] + 1
+        wait_time = 0
+        
+        if fails >= MAX_FAILURES:
+            wait_time = COOLDOWN_SECONDS
+            logger.error(f"❌ {source_key} BROKEN: {e}. Cooling down for {wait_time}s.")
+        else:
+            logger.warning(f"⚠️ {source_key} Glitch: {e}")
+
+        source_health[source_key] = {
+            "fails": fails, 
+            "next_try": time.time() + wait_time
+        }
         return []
             #@academictelebotbyroshhellwett

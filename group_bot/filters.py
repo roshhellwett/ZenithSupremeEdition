@@ -16,24 +16,18 @@ def _run_regex_sync(text):
     if not text:
         return False, None
 
-    # Unicode Normalization (Catches stylized bypass fonts)
     normalized_text = unicodedata.normalize("NFKD", text).lower()
     
-    # PASS 1: Strict Word Scan (Safe)
     if STRICT_PATTERN.search(normalized_text):
         return True, "Abusive Language Detected"
 
-    # PASS 2: Substring Scan (Deep)
     if RELAXED_PATTERN.search(normalized_text):
         return True, "Abusive Language Detected"
 
-    # PASS 3: Obfuscation Scan (Spaces/Symbols removed)
-    # Catches "f u c k" or "s.h.i.t"
     noise_free = re.sub(r'[^a-z0-9]', '', normalized_text)
     if RELAXED_PATTERN.search(noise_free):
         return True, "Attempted Profanity Bypass"
 
-    # PASS 4: Link Protection
     if "makaut" not in normalized_text:
         for domain in SPAM_DOMAINS:
             if domain in normalized_text:

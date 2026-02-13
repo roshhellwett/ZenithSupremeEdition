@@ -15,7 +15,7 @@ USER_AGENTS = [
 ]
 
 def _parse_pdf_sync(pdf_bytes):
-    """CPU-bound parsing (Sync)."""
+    """CPU-bound parsing (Sync). Runs in thread."""
     try:
         with pdfplumber.open(pdf_bytes) as pdf:
             if not pdf.pages: return None
@@ -33,30 +33,41 @@ def _parse_pdf_sync(pdf_bytes):
         return None
 
 async def get_date_from_pdf(pdf_url):
-    """Memory-Safe PDF Fetcher."""
+    """
+    Memory-Safe PDF Fetcher.
+    Streams data and aborts if file is too large.
+    """
     verify = not any(d in pdf_url for d in SSL_VERIFY_EXEMPT)
     headers = {"User-Agent": random.choice(USER_AGENTS)}
 
     try:
         async with httpx.AsyncClient(verify=verify, timeout=REQUEST_TIMEOUT, follow_redirects=True) as client:
-            # 1. HEAD Request (Check size before downloading)
-            head_resp = await client.head(pdf_url, headers=headers)
-            size = int(head_resp.headers.get("Content-Length", 0))
-            
-            if size > (MAX_PDF_SIZE_MB * 1024 * 1024):
-                logger.warning(f"⚠️ PDF Too Large ({size} bytes): {pdf_url}")
-                return None
+            async with client.stream("GET", pdf_url, headers=headers) as response:
+                if response.status_code != 200: return None
+                
+                # Check Size Header First
+                content_length = response.headers.get("Content-Length")
+                if content_length and int(content_length) > (MAX_PDF_SIZE_MB * 1024 * 1024):
+                    return None
 
-            # 2. Download (Streamed)
-            resp = await client.get(pdf_url, headers=headers)
-            if resp.status_code != 200: return None
+                # Safe Stream Download
+                data = io.BytesIO()
+                downloaded = 0
+                max_bytes = MAX_PDF_SIZE_MB * 1024 * 1024
 
-            pdf_bytes = io.BytesIO(resp.content)
-            
-            # 3. Offload Parsing
-            return await asyncio.to_thread(_parse_pdf_sync, pdf_bytes)
+                async for chunk in response.aiter_bytes():
+                    downloaded += len(chunk)
+                    if downloaded > max_bytes:
+                        logger.warning(f"⚠️ PDF truncated (Too Large): {pdf_url}")
+                        return None # Abort download
+                    data.write(chunk)
+                
+                data.seek(0)
+                
+                # Offload CPU work to thread
+                return await asyncio.to_thread(_parse_pdf_sync, data)
 
     except Exception as e:
-        logger.warning(f"⚠️ PDF Fail: {e}")
+        logger.debug(f"⚠️ PDF Skip: {e}")
         return None
         #@academictelebotbyroshhellwett
