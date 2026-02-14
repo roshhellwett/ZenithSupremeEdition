@@ -28,27 +28,34 @@ COOLDOWN_SECONDS = 1800  # 30 Minutes
 
 def _parse_html_sync(html_content, source_config):
     """
-    CPU-BOUND TASK: Universal Link Extractor.
-    Scans the entire page without getting trapped in HTML tables.
+    CPU-BOUND TASK: Universal Link Extractor with Strict Isolation.
+    Prevents cross-contamination from adjacent links.
     """
     soup = BeautifulSoup(html_content, "html.parser")
     items = []
     
-    # Grab EVERY link on the page
     for a in soup.find_all("a", href=True):
         full_url = urljoin(source_config["url"], a["href"])
-        
-        # Get the link text, and the parent's text (in case date is outside the link)
         link_text = a.get_text(" ", strip=True)
-        parent_text = a.parent.get_text(" ", strip=True) if a.parent else ""
         
-        # Combine them to ensure we don't miss the date
-        final_text = f"{parent_text} {link_text}".strip() if parent_text else link_text
+        # SMART ISOLATION: 
+        # Only use parent text if this is the ONLY link inside the parent (e.g., a single <li>)
+        parent_text = ""
+        if a.parent and len(a.parent.find_all("a")) == 1:
+            parent_text = a.parent.get_text(" ", strip=True)
+            
+        if parent_text and len(parent_text) < 300:
+            final_text = parent_text
+        else:
+            # If parent is a massive container, fallback to ONLY the text immediately before the link
+            prev = a.previous_sibling
+            # Check if previous sibling is a raw text string, not another HTML tag
+            prev_text = str(prev).strip() if prev and getattr(prev, 'name', None) is None else ""
+            final_text = f"{prev_text} {link_text}".strip() if len(prev_text) < 50 else link_text
         
         items.append({
             "text": final_text,
-            "url": full_url,
-            "context": parent_text
+            "url": full_url
         })
             
     return items
@@ -57,30 +64,25 @@ async def build_item(raw_data, source_name):
     """Async Processor for individual items."""
     title = raw_data["text"]
     url = raw_data["url"]
-    context = raw_data["context"]
 
     if not title or not url: return None
     
-    # 1. Forensic Noise Filtering (Added "syllabus" to prevent button clicks)
+    # 1. Forensic Noise Filtering
     BLOCKLIST = ["about us", "contact", "home", "back", "gallery", "archive", "click here", "apply now", "visit", "syllabus"]
     if len(title) < 5 or any(k in title.lower() for k in BLOCKLIST): 
         return None
 
-    # 2. STRICT Date Discovery (Title -> Context ONLY)
-    # We explicitly DO NOT check PDF metadata anymore to prevent fake dates.
+    # 2. STRICT Date Discovery (Title ONLY - Context is already merged)
     real_date = extract_date(title) 
-    if not real_date and context:
-        real_date = extract_date(context)
     
-    # 🚨 THE ABSOLUTE SHIELD: No Date in Text? DROP IT IMMEDIATELY.
+    # 🚨 THE ABSOLUTE SHIELD: No Date? DROP IT.
     if not real_date:
         return None
 
     # 3. Refined GHOST FILTER
     OLD_YEARS = ["2019", "2020", "2021", "2022", "2023"]
     if any(y in title for y in OLD_YEARS):
-        # If it mentions an old year, but the extracted date is current (2025/2026), KEEP IT.
-        # Otherwise, if the extracted date is also old, DROP IT.
+        # If extracted date is old, DROP IT.
         if str(real_date.year) in OLD_YEARS:
             return None
 
