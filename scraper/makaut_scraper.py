@@ -53,7 +53,7 @@ def _parse_html_sync(html_content, source_config):
             
     return items
 
-async def build_item(raw_data, source_name):
+    async def build_item(raw_data, source_name):
     """Async Processor for individual items."""
     title = raw_data["text"]
     url = raw_data["url"]
@@ -61,27 +61,30 @@ async def build_item(raw_data, source_name):
 
     if not title or not url: return None
     
-    # 1. Forensic Noise Filtering (Added "syllabus" to prevent button clicks)
+    # 1. Forensic Noise Filtering
     BLOCKLIST = ["about us", "contact", "home", "back", "gallery", "archive", "click here", "apply now", "visit", "syllabus"]
     if len(title) < 5 or any(k in title.lower() for k in BLOCKLIST): 
         return None
 
-    # 2. GHOST FILTER: Reject explicitly old academic years in the text
-    OLD_YEARS = ["2019", "2020", "2021", "2022", "2023"]
-    if any(y in title for y in OLD_YEARS) and str(TARGET_YEARS[0]) not in title:
-        return None
-
-    # 3. STRICT Date Discovery (Title -> Context ONLY)
+    # 2. STRICT Date Discovery (Title -> Context ONLY)
     real_date = extract_date(title) 
     if not real_date and context:
         real_date = extract_date(context)
     
-    # 🚨 THE FIX: No Date in Text? Then it's a website button, NOT a notice! Drop it.
-    # We completely removed the PDF metadata scan here to prevent false positives.
+    # 3. THE FIX: No Date in Text? Then it's a website button, NOT a notice! Drop it.
     if not real_date:
         return None
 
-    # 4. Validity Check (Dynamic Year Window)
+    # 4. Refined GHOST FILTER
+    # ONLY check for old years if the EXTRACTED date is also suspiciously old.
+    OLD_YEARS = ["2019", "2020", "2021", "2022", "2023"]
+    if any(y in title for y in OLD_YEARS):
+        # If it mentions an old year, but the extracted date is current (2025/2026), KEEP IT.
+        # Otherwise, if the extracted date is also old, DROP IT.
+        if str(real_date.year) in OLD_YEARS:
+            return None
+
+    # 5. Validity Check (Dynamic Year Window)
     if real_date and real_date.year in TARGET_YEARS:
         return {
             "title": title.strip(),
