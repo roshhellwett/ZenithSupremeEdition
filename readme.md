@@ -1,4 +1,4 @@
-# 🚀 Zenith Supreme Edition 
+# Zenith Supreme Edition
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=for-the-badge&logo=python)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Asyncpg-blue?style=for-the-badge&logo=postgresql)
@@ -6,41 +6,119 @@
 ![Telegram API](https://img.shields.io/badge/Telegram_Bot_API-v20+-blue?style=for-the-badge&logo=telegram)
 ![License](https://img.shields.io/badge/License-Open_Source-green?style=for-the-badge)
 
-**Zenith Supreme Edition** is an enterprise-grade, highly scalable SaaS (Software as a Service) Telegram Group Moderation engine. Built on a multi-tenant microservices architecture, it empowers group administrators to protect their communities from spam raids, abuse, and hostile takeovers through a frictionless, zero-typing setup interface.
+---
 
-## ✨ Key Features
+## 🧬 Overview
 
-* **🛡️ 24-Hour Anti-Raid Shield:** Automatically tracks when users join and instantly deletes any media, stickers, or links they attempt to send during their first 24 hours.
-* **🧠 "Zero-Typing" Deep Link Setup:** Administrators configure their group settings entirely through private DMs via secure inline buttons—no more copying hidden Group IDs or typing complex commands.
-* **⚡ High-Performance Regex & Caching:** Utilizes compiled global regex and `TTLCache` (Time-To-Live) LRU caching to eliminate N+1 database queries and prevent RAM exhaustion under heavy raid loads.
-* **🚨 Owner Alert System:** When a rule is violated, Zenith handles the threat publicly but silently DMs the group owner a detailed incident report.
-* **👻 Self-Healing Edge Case Management:** Automatically migrates IDs when a group upgrades to a Supergroup, handles anonymous admin broadcasts, bypasses false bans on photo albums, and elegantly shuts down if kicked or blocked.
-* **🎭 Smooth Vanishing Animations:** Public warnings are given a 5-second lifespan before automatically deleting themselves to keep the group chat pristine.
+**Zenith Supreme Edition** is an **enterprise-grade, horizontally scalable Telegram Moderation SaaS platform** engineered to safeguard large-scale communities from spam raids, automated abuse, and coordinated hostile takeovers.
 
-[Image of a modern Telegram bot dashboard UI]
+Designed around a **zero-friction onboarding philosophy**, Zenith enables group administrators to deploy advanced moderation infrastructure without manual configuration, command memorization, or technical setup complexity.
 
-## 🏗️ Architecture & Tech Stack
-
-Zenith is built for deployment on modern cloud platforms (like Railway, Render, or AWS) and relies on:
-* **Language:** Python 3.11/3.12 (Strictly asyncio-driven)
-* **Database:** PostgreSQL (via `asyncpg` for non-blocking I/O)
-* **ORM:** SQLAlchemy 2.0 (with connection pooling)
-* **Framework:** `python-telegram-bot` v20+
-
-### The Multi-Tenant Container Model
-Instead of spinning up physical databases per group, Zenith uses a logical Row-Level Isolation pattern (`zenith_group_settings`). The bot remains completely dormant in a group until the owner successfully authenticates and activates their specific "container" via the DM dashboard.
+The platform operates as a **multi-tenant, cloud-native microservices ecosystem**, delivering high availability, low latency moderation decisions, and production-grade resilience under high message throughput.
 
 ---
 
-## ⚙️ Installation & Deployment
+## 🏗️ Architecture & Technology Stack
 
-### 1. Prerequisites
-* Python 3.11 or higher
-* A PostgreSQL Database URL
-* A Telegram Bot Token (from [@BotFather](https://t.me/botfather))
+Zenith is purpose-built for deployment across modern cloud infrastructure providers such as **Railway, Render, AWS, or GCP**, with a strict focus on asynchronous performance and cost-efficient resource utilization.
 
-### 2. Local Setup
-Clone the repository and move into the directory:
-```bash
-git clone [https://github.com/yourusername/ZenithSupremeEdition.git](https://github.com/yourusername/ZenithSupremeEdition.git)
-cd ZenithSupremeEdition
+### Core Stack
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| **Language Runtime** | Python 3.11 / 3.12 | High-performance async execution |
+| **Database Engine** | PostgreSQL | Reliable transactional storage |
+| **Async Driver** | asyncpg | Non-blocking database I/O |
+| **ORM Layer** | SQLAlchemy 2.0 | Typed, async ORM with pooling |
+| **Bot Framework** | python-telegram-bot v20+ | Async Telegram event processing |
+
+---
+
+## ⚙️ Async-First Execution Philosophy
+
+Zenith is **strictly asyncio-driven**, ensuring:
+
+- Non-blocking Telegram update handling  
+- High concurrency message processing  
+- Reduced infrastructure cost per tenant  
+- Efficient CPU and memory utilization on metered cloud environments  
+
+---
+
+## 🧩 Multi-Tenant Container Model
+
+Rather than provisioning isolated physical databases per Telegram group, Zenith implements a **logical row-level isolation strategy** powered by the `zenith_group_settings` control plane.
+
+### Key Design Advantages
+
+✔ Massive cost reduction vs per-database tenancy  
+✔ Faster provisioning and onboarding  
+✔ Simplified schema evolution and migrations  
+✔ Centralized observability and monitoring  
+✔ Cloud credit optimized (critical for Railway-style billing models)
+
+---
+
+## 🔐 Activation-Based Runtime Isolation
+
+The moderation engine remains **fully dormant** within a group until ownership authentication is successfully completed via the private DM dashboard.
+
+Once activated:
+
+- A logical tenant container is initialized  
+- Group-specific moderation policies are loaded  
+- Runtime enforcement pipeline is attached  
+- Real-time monitoring hooks are enabled  
+
+This ensures:
+
+- Zero unauthorized configuration changes  
+- No background resource drain from inactive groups  
+- Clean tenant lifecycle management  
+
+---
+
+## ☁️ Cloud-Native Deployment Strategy
+
+Zenith is optimized for **ephemeral container platforms** and **credit-based cloud runtimes**, with:
+
+- Fast cold-start readiness  
+- Environment-driven configuration  
+- Centralized structured logging  
+- Async connection pooling  
+- Horizontal scaling compatibility  
+
+---
+
+## 🚀 How To Use
+
+You can access the bot on Telegram via **[@zenithgroupbot](https://t.me/zenithgroupbot)**.
+
+### Quick Setup
+
+1. Open the bot in Telegram  
+2. Press **Start**  
+3. Follow the guided onboarding instructions  
+4. Use `/help` anytime to view commands, features, and setup assistance  
+
+The setup is designed to be **zero-typing friendly**, allowing administrators to configure protection systems through an intuitive guided flow.
+
+---
+
+## 📦 Releases & Open Source Roadmap
+
+> **Additional RTV (Real-Time Verification) Bots and security modules will be progressively released as open-source components.**
+
+Planned release areas include:
+
+- Advanced anti-raid verification modules  
+- AI-assisted moderation extensions  
+- Scalable multi-bot orchestration utilities  
+- Security-focused Telegram infrastructure tooling  
+
+Stay tuned for future public releases and ecosystem expansion.
+
+---
+
+© 2026 Zenith Infrastructure. All Rights Reserved.  
+Open Source Components Released Under Respective Licenses.
