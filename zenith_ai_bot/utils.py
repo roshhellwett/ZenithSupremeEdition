@@ -1,3 +1,4 @@
+import re
 import asyncio
 from cachetools import TTLCache
 import fitz  
@@ -57,9 +58,24 @@ async def check_ai_rate_limit(user_id: int) -> tuple[bool, str]:
 
 def sanitize_telegram_html(text: str) -> str:
     if not text: return ""
+    
+    # 1. Strip markdown code block wrappers
     if text.startswith("```html"): text = text[7:]
     elif text.startswith("```"): text = text[3:]
     if text.endswith("```"): text = text[:-3]
+    
+    # 2. Aggressively strip illegal <img> tags that crash Telegram
+    text = re.sub(r"<img[^>]*>", "[Image Omitted]", text, flags=re.IGNORECASE)
+    
+    # 3. Strip structural HTML tags that Telegram hates
+    text = re.sub(r"</?p>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</?div[^>]*>", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"</?span[^>]*>", "", text, flags=re.IGNORECASE)
+    
+    # 4. Convert leaked Markdown Bold (**) to Telegram HTML Bold (<b>)
+    text = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", text)
+    
     return text.strip()
 
 def is_file_allowed(file_size: int) -> bool:
