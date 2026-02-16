@@ -2,7 +2,6 @@
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=for-the-badge&logo=python)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Asyncpg-blue?style=for-the-badge&logo=postgresql)
-![SQLAlchemy](https://img.shields.io/badge/SQLAlchemy-2.0+-red?style=for-the-badge)
 ![Telegram API](https://img.shields.io/badge/Telegram_Bot_API-v20+-blue?style=for-the-badge&logo=telegram)
 ![License](https://img.shields.io/badge/License-Open_Source-green?style=for-the-badge)
 
