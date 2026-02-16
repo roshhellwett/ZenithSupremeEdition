@@ -12,7 +12,14 @@ WEBHOOK_URL = os.getenv("WEBHOOK_URL", "")
 PORT = int(os.getenv("PORT", 8080))
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "zenith_secure_path_777")
 
-# --- LEAVING DATABASE_URL AS IT IS IN YOUR CORE ---
+# ==========================================
+# 🐋 ZENITH WHALE CONFIGURATION (NEW)
+# ==========================================
+CRYPTO_BOT_TOKEN = os.getenv("CRYPTO_BOT_TOKEN", "")
+ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", 0)) # Your personal Telegram ID
+ETH_RPC_URL = os.getenv("ETH_RPC_URL", "") # Alchemy Free HTTPS URL
+
+# Strict Postgres Async Driver Enforcement
 if DATABASE_URL:
     if DATABASE_URL.startswith("postgres://"):
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+asyncpg://", 1)
@@ -20,6 +27,4 @@ if DATABASE_URL:
         DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-
-# 🚀 CRITICAL REFINEMENT: Lowered to 10 to safely allow 4-5 bots on a single Hobby-Tier PostgreSQL DB
 DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", 10))
