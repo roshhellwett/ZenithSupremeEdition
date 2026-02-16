@@ -1,4 +1,4 @@
-# Zenith Supreme Edition
+# Project Monolith
 
 ![Python](https://img.shields.io/badge/Python-3.11%2B-blue?style=for-the-badge&logo=python)
 ![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Asyncpg-blue?style=for-the-badge&logo=postgresql)
@@ -9,13 +9,13 @@
 
 ## 🧬 Overview
 
-**Zenith Supreme Edition** is an **enterprise-grade, horizontally scalable Telegram Bot ecosystem** designed to ensure the **durability, scalability, and real-world usability of automation-driven ideas**.
+**Project Monolith** is an **enterprise-grade, horizontally scalable Telegram Bot ecosystem** designed to ensure the **durability, scalability, and real-world usability of automation-driven ideas**.
 
 ---
 
-## 🤖 Zenith Bot Ecosystem
+## 🤖 Project Monolith Bot Ecosystem
 
-Zenith includes multiple categories of bots designed for daily user productivity and community management:
+includes multiple categories of bots designed for daily user productivity and community management:
 
 ### 🤖 Zenith Group BOT
 - Anti-spam protection  
