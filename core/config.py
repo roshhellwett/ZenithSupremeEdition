@@ -18,6 +18,8 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 CRYPTO_BOT_TOKEN = os.getenv("CRYPTO_BOT_TOKEN", "")
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", 0)) # Your personal Telegram ID
 ETH_RPC_URL = os.getenv("ETH_RPC_URL", "") # Alchemy Free HTTPS URL
+SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "")
+ETHERSCAN_API_KEY = os.getenv("ETHERSCAN_API_KEY", "") # Free tier: 5 calls/sec
 
 # Strict Postgres Async Driver Enforcement
 if DATABASE_URL:

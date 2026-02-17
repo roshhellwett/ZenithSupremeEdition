@@ -5,7 +5,10 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select, delete
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from core.config import DATABASE_URL, DB_POOL_SIZE
-from zenith_crypto_bot.models import CryptoBase, Subscription, ActivationKey, CryptoUser, SavedAudit
+from zenith_crypto_bot.models import (
+    CryptoBase, Subscription, ActivationKey, CryptoUser, SavedAudit,
+    PriceAlert, TrackedWallet, WatchlistToken
+)
 
 engine = create_async_engine(DATABASE_URL, pool_size=DB_POOL_SIZE, pool_pre_ping=True)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
@@ -92,11 +95,14 @@ class SubscriptionRepo:
                 return 0
             return (sub.expires_at - now).days
 
-    # --- 🗂️ AUDIT VAULT LOGIC (RACE CONDITION PATCHED) ---
+    @staticmethod
+    async def is_pro(user_id: int) -> bool:
+        return (await SubscriptionRepo.get_days_left(user_id)) > 0
+
+    # --- 🗂️ AUDIT VAULT ---
     @staticmethod
     async def save_audit(user_id: int, contract: str):
         async with AsyncSessionLocal() as session:
-            # 🚀 FAANG FIX: Atomic UPSERT prevents double-inserts during massive spam attacks
             stmt = pg_insert(SavedAudit).values(
                 user_id=user_id, contract=contract[:100]
             ).on_conflict_do_update(
@@ -104,8 +110,6 @@ class SubscriptionRepo:
                 set_=dict(saved_at=datetime.now(timezone.utc))
             )
             await session.execute(stmt)
-
-            # Strict bounds enforcement (destroy anything beyond 10 records)
             count_stmt = select(SavedAudit).where(SavedAudit.user_id == user_id).order_by(SavedAudit.saved_at.desc())
             audits = (await session.execute(count_stmt)).scalars().all()
             if len(audits) > 10:
@@ -138,6 +142,154 @@ class SubscriptionRepo:
             stmt = delete(SavedAudit).where(SavedAudit.user_id == user_id)
             await session.execute(stmt)
             await session.commit()
+
+
+# ==========================================
+# 💎 PRO FEATURE REPOSITORIES
+# ==========================================
+
+class PriceAlertRepo:
+
+    @staticmethod
+    async def create_alert(user_id: int, token_id: str, token_symbol: str, target_price: float, direction: str) -> PriceAlert:
+        async with AsyncSessionLocal() as session:
+            alert = PriceAlert(
+                user_id=user_id, token_id=token_id, token_symbol=token_symbol.upper(),
+                target_price=target_price, direction=direction
+            )
+            session.add(alert)
+            await session.commit()
+            await session.refresh(alert)
+            return alert
+
+    @staticmethod
+    async def get_user_alerts(user_id: int) -> list:
+        async with AsyncSessionLocal() as session:
+            stmt = select(PriceAlert).where(
+                PriceAlert.user_id == user_id, PriceAlert.is_triggered == False
+            ).order_by(PriceAlert.created_at.desc())
+            return (await session.execute(stmt)).scalars().all()
+
+    @staticmethod
+    async def get_all_active_alerts() -> list:
+        async with AsyncSessionLocal() as session:
+            stmt = select(PriceAlert).where(PriceAlert.is_triggered == False)
+            return (await session.execute(stmt)).scalars().all()
+
+    @staticmethod
+    async def trigger_alert(alert_id: int):
+        async with AsyncSessionLocal() as session:
+            stmt = select(PriceAlert).where(PriceAlert.id == alert_id)
+            alert = (await session.execute(stmt)).scalar_one_or_none()
+            if alert:
+                alert.is_triggered = True
+                await session.commit()
+
+    @staticmethod
+    async def delete_alert(user_id: int, alert_id: int) -> bool:
+        async with AsyncSessionLocal() as session:
+            stmt = delete(PriceAlert).where(PriceAlert.user_id == user_id, PriceAlert.id == alert_id)
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount > 0
+
+    @staticmethod
+    async def count_user_alerts(user_id: int) -> int:
+        async with AsyncSessionLocal() as session:
+            stmt = select(PriceAlert).where(
+                PriceAlert.user_id == user_id, PriceAlert.is_triggered == False
+            )
+            return len((await session.execute(stmt)).scalars().all())
+
+
+class WalletTrackerRepo:
+
+    @staticmethod
+    async def add_wallet(user_id: int, wallet_address: str, label: str = "Unnamed Wallet") -> bool:
+        async with AsyncSessionLocal() as session:
+            stmt = pg_insert(TrackedWallet).values(
+                user_id=user_id, wallet_address=wallet_address.lower(), label=label[:50]
+            ).on_conflict_do_nothing()
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount > 0
+
+    @staticmethod
+    async def get_user_wallets(user_id: int) -> list:
+        async with AsyncSessionLocal() as session:
+            stmt = select(TrackedWallet).where(TrackedWallet.user_id == user_id).order_by(TrackedWallet.created_at.desc())
+            return (await session.execute(stmt)).scalars().all()
+
+    @staticmethod
+    async def get_all_tracked_wallets() -> list:
+        async with AsyncSessionLocal() as session:
+            stmt = select(TrackedWallet)
+            return (await session.execute(stmt)).scalars().all()
+
+    @staticmethod
+    async def remove_wallet(user_id: int, wallet_address: str) -> bool:
+        async with AsyncSessionLocal() as session:
+            stmt = delete(TrackedWallet).where(
+                TrackedWallet.user_id == user_id, TrackedWallet.wallet_address == wallet_address.lower()
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount > 0
+
+    @staticmethod
+    async def update_last_tx(wallet_id: int, tx_hash: str):
+        async with AsyncSessionLocal() as session:
+            stmt = select(TrackedWallet).where(TrackedWallet.id == wallet_id)
+            wallet = (await session.execute(stmt)).scalar_one_or_none()
+            if wallet:
+                wallet.last_checked_tx = tx_hash
+                await session.commit()
+
+    @staticmethod
+    async def count_user_wallets(user_id: int) -> int:
+        async with AsyncSessionLocal() as session:
+            stmt = select(TrackedWallet).where(TrackedWallet.user_id == user_id)
+            return len((await session.execute(stmt)).scalars().all())
+
+
+class WatchlistRepo:
+
+    @staticmethod
+    async def add_token(user_id: int, token_id: str, token_symbol: str, entry_price: float, quantity: float = 1.0) -> bool:
+        async with AsyncSessionLocal() as session:
+            stmt = pg_insert(WatchlistToken).values(
+                user_id=user_id, token_id=token_id, token_symbol=token_symbol.upper(),
+                entry_price=entry_price, quantity=quantity
+            ).on_conflict_do_update(
+                index_elements=['user_id', 'token_id'],
+                set_=dict(entry_price=entry_price, quantity=quantity)
+            )
+            await session.execute(stmt)
+            await session.commit()
+            return True
+
+    @staticmethod
+    async def get_watchlist(user_id: int) -> list:
+        async with AsyncSessionLocal() as session:
+            stmt = select(WatchlistToken).where(WatchlistToken.user_id == user_id).order_by(WatchlistToken.created_at.desc())
+            return (await session.execute(stmt)).scalars().all()
+
+    @staticmethod
+    async def remove_token(user_id: int, token_id: str) -> bool:
+        async with AsyncSessionLocal() as session:
+            stmt = delete(WatchlistToken).where(
+                WatchlistToken.user_id == user_id, WatchlistToken.token_id == token_id
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            return result.rowcount > 0
+
+    @staticmethod
+    async def count_watchlist(user_id: int) -> int:
+        async with AsyncSessionLocal() as session:
+            stmt = select(WatchlistToken).where(WatchlistToken.user_id == user_id)
+            return len((await session.execute(stmt)).scalars().all())
+
 
 async def dispose_crypto_engine():
     await engine.dispose()
