@@ -29,7 +29,7 @@ Zenith is a multi-bot Telegram platform that delivers real-time blockchain intel
 | Wallet Tracker | ❌ Locked |
 | Top Gainers/Losers | ❌ Locked |
 
-### ⚡ Pro (99Rs/month)
+### ⚡ Pro (49Rs/month)
 
 | Feature | Limits |
 |---------|--------|
