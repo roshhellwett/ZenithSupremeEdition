@@ -91,13 +91,72 @@ class SubscriptionRepo:
             res = await session.execute(select(Subscription).where(Subscription.user_id == user_id))
             sub = res.scalar_one_or_none()
             now = datetime.now(timezone.utc)
-            if not sub or sub.expires_at < now:
+            if not sub or sub.expires_at <= now:
                 return 0
-            return (sub.expires_at - now).days
+            remaining = sub.expires_at - now
+            # Round up so users with <24h left still show "1 day" and stay Pro
+            return remaining.days + (1 if remaining.seconds > 0 else 0)
 
     @staticmethod
     async def is_pro(user_id: int) -> bool:
-        return (await SubscriptionRepo.get_days_left(user_id)) > 0
+        """Check if user has any active Pro time remaining (down to the second)."""
+        async with AsyncSessionLocal() as session:
+            res = await session.execute(select(Subscription).where(Subscription.user_id == user_id))
+            sub = res.scalar_one_or_none()
+            if not sub:
+                return False
+            return sub.expires_at > datetime.now(timezone.utc)
+
+    @staticmethod
+    async def extend_subscription(user_id: int, days: int = 30) -> tuple[bool, str]:
+        """Admin renewal: add days to a user's subscription without a new key."""
+        async with AsyncSessionLocal() as session:
+            async with session.begin():
+                res = await session.execute(
+                    select(Subscription).where(Subscription.user_id == user_id).with_for_update()
+                )
+                sub = res.scalar_one_or_none()
+                now = datetime.now(timezone.utc)
+                add_on = timedelta(days=days)
+
+                if sub:
+                    # If still active, extend from current expiry; otherwise from now
+                    base = sub.expires_at if sub.expires_at > now else now
+                    sub.expires_at = base + add_on
+                else:
+                    session.add(Subscription(user_id=user_id, expires_at=now + add_on))
+
+                new_expiry = (sub.expires_at if sub else now + add_on)
+                return True, (
+                    f"✅ <b>Subscription Extended</b>\n\n"
+                    f"<b>User:</b> <code>{user_id}</code>\n"
+                    f"<b>Added:</b> {days} days\n"
+                    f"<b>New Expiry:</b> {new_expiry.strftime('%d %b %Y %H:%M UTC')}"
+                )
+
+    @staticmethod
+    async def get_expiring_users(within_hours: int = 72) -> list:
+        """Get users whose subscription expires within N hours (for warnings)."""
+        async with AsyncSessionLocal() as session:
+            now = datetime.now(timezone.utc)
+            cutoff = now + timedelta(hours=within_hours)
+            stmt = select(Subscription).where(
+                Subscription.expires_at > now,
+                Subscription.expires_at <= cutoff
+            )
+            return (await session.execute(stmt)).scalars().all()
+
+    @staticmethod
+    async def get_just_expired_users(within_hours: int = 1) -> list:
+        """Get users whose subscription expired within the last N hours."""
+        async with AsyncSessionLocal() as session:
+            now = datetime.now(timezone.utc)
+            cutoff = now - timedelta(hours=within_hours)
+            stmt = select(Subscription).where(
+                Subscription.expires_at <= now,
+                Subscription.expires_at >= cutoff
+            )
+            return (await session.execute(stmt)).scalars().all()
 
     # --- 🗂️ AUDIT VAULT ---
     @staticmethod
@@ -222,8 +281,14 @@ class WalletTrackerRepo:
 
     @staticmethod
     async def get_all_tracked_wallets() -> list:
+        """Only return wallets belonging to users with active Pro subscriptions."""
         async with AsyncSessionLocal() as session:
-            stmt = select(TrackedWallet)
+            now = datetime.now(timezone.utc)
+            stmt = (
+                select(TrackedWallet)
+                .join(Subscription, TrackedWallet.user_id == Subscription.user_id)
+                .where(Subscription.expires_at > now)
+            )
             return (await session.execute(stmt)).scalars().all()
 
     @staticmethod

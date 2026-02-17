@@ -69,7 +69,10 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_keygen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != ADMIN_USER_ID:
         return await update.message.reply_text("⛔ Unauthorized.")
-    days = int(context.args[0]) if context.args else 30
+    try:
+        days = int(context.args[0]) if context.args else 30
+    except ValueError:
+        return await update.message.reply_text("⚠️ Invalid day count. Usage: <code>/keygen [DAYS]</code>", parse_mode="HTML")
     key = await SubscriptionRepo.generate_key(days)
     await update.message.reply_text(f"🔑 <b>Key Generated:</b> <code>{key}</code>\nDuration: <b>{days} days</b>", parse_mode="HTML")
 
@@ -79,6 +82,46 @@ async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     key_string = context.args[0].strip()
     success, msg = await SubscriptionRepo.redeem_key(update.effective_user.id, key_string)
     await update.message.reply_text(msg, parse_mode="HTML")
+
+async def cmd_extend(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin only: /extend <user_id> [days] — renew a user's Pro without generating a key."""
+    if update.effective_user.id != ADMIN_USER_ID:
+        return await update.message.reply_text("⛔ Unauthorized.")
+    if not context.args:
+        return await update.message.reply_text(
+            "⚠️ <b>Usage:</b> <code>/extend [USER_ID] [DAYS]</code>\n"
+            "Example: <code>/extend 123456789 30</code>\n\n"
+            "<i>Defaults to 30 days if DAYS is omitted.</i>",
+            parse_mode="HTML"
+        )
+    try:
+        target_user_id = int(context.args[0])
+    except ValueError:
+        return await update.message.reply_text("⚠️ Invalid user ID.")
+    days = 30
+    if len(context.args) > 1:
+        try:
+            days = int(context.args[1])
+        except ValueError:
+            return await update.message.reply_text("⚠️ Invalid day count.")
+    success, msg = await SubscriptionRepo.extend_subscription(target_user_id, days)
+    await update.message.reply_text(msg, parse_mode="HTML")
+    # Notify the user that their subscription was extended
+    if success:
+        try:
+            await bot_app.bot.send_message(
+                chat_id=target_user_id,
+                text=(
+                    f"💎 <b>PRO SUBSCRIPTION RENEWED</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"✅ <b>{days} days</b> have been added to your account.\n"
+                    f"Enjoy uninterrupted access to all Pro features!\n\n"
+                    f"<i>Type /start to open your terminal.</i>"
+                ),
+                parse_mode="HTML"
+            )
+        except Exception:
+            pass  # User may have blocked the bot
 
 async def cmd_audit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -485,6 +528,64 @@ async def active_blockchain_watcher():
             try: alert_queue.put_nowait((uid, txt))
             except asyncio.QueueFull: pass
 
+async def subscription_monitor():
+    """Check for expiring/expired subscriptions every hour and notify users."""
+    notified_warning = set()   # Track warned users to avoid spam
+    notified_expired = set()   # Track expired notifications
+    
+    while True:
+        await asyncio.sleep(3600)  # Every hour
+        try:
+            # 3-day warning
+            expiring = await SubscriptionRepo.get_expiring_users(within_hours=72)
+            for sub in expiring:
+                if sub.user_id in notified_warning:
+                    continue
+                notified_warning.add(sub.user_id)
+                days_left = max(1, (sub.expires_at - datetime.now(timezone.utc)).days)
+                text = (
+                    f"⚠️ <b>SUBSCRIPTION EXPIRING SOON</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"Your Zenith Pro expires in <b>{days_left} day{'s' if days_left != 1 else ''}</b>.\n\n"
+                    f"To renew, contact the admin and provide your ID:\n"
+                    f"<code>{sub.user_id}</code>\n\n"
+                    f"<i>After payment, your subscription will be extended instantly.</i>"
+                )
+                try:
+                    alert_queue.put_nowait((sub.user_id, text))
+                except asyncio.QueueFull:
+                    pass
+
+            # Just expired
+            expired = await SubscriptionRepo.get_just_expired_users(within_hours=1)
+            for sub in expired:
+                if sub.user_id in notified_expired:
+                    continue
+                notified_expired.add(sub.user_id)
+                text = (
+                    f"🔴 <b>PRO SUBSCRIPTION ENDED</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+                    f"Your Zenith Pro access has expired.\n"
+                    f"Pro features (wallet tracker, full security scans, "
+                    f"extended alerts) are now locked.\n\n"
+                    f"<b>To renew:</b> Contact the admin with your ID:\n"
+                    f"<code>{sub.user_id}</code>\n\n"
+                    f"<i>Your data (alerts, portfolio, wallets) is preserved "
+                    f"and will be available again once you renew.</i>"
+                )
+                try:
+                    alert_queue.put_nowait((sub.user_id, text))
+                except asyncio.QueueFull:
+                    pass
+
+            # Cleanup old entries to prevent memory leak
+            if len(notified_warning) > 1000:
+                notified_warning.clear()
+            if len(notified_expired) > 1000:
+                notified_expired.clear()
+        except Exception as e:
+            logger.error(f"Subscription monitor error: {e}")
+
 
 # ==========================================
 # 🚀 LIFECYCLE
@@ -502,6 +603,7 @@ async def start_service():
     bot_app.add_handler(CommandHandler("start", cmd_start))
     bot_app.add_handler(CommandHandler("activate", cmd_activate))
     bot_app.add_handler(CommandHandler("keygen", cmd_keygen))
+    bot_app.add_handler(CommandHandler("extend", cmd_extend))
     bot_app.add_handler(CommandHandler("audit", cmd_audit))
     # Pro feature commands
     bot_app.add_handler(CommandHandler("alert", cmd_alert))
@@ -535,6 +637,7 @@ async def start_service():
     track_task(asyncio.create_task(safe_loop("watcher", active_blockchain_watcher)))
     track_task(asyncio.create_task(safe_loop("price_alerts", price_alert_checker)))
     track_task(asyncio.create_task(safe_loop("wallet_watcher", wallet_watcher)))
+    track_task(asyncio.create_task(safe_loop("sub_monitor", subscription_monitor)))
 
 async def stop_service():
     for t in list(background_tasks):
