@@ -18,8 +18,6 @@ engine = create_async_engine(DATABASE_URL, pool_size=DB_POOL_SIZE, max_overflow=
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 settings_cache = TTLCache(maxsize=1000, ttl=300)
-# 🚀 SCENARIO 12: Thundering Herd Mutex Lock
-settings_lock = asyncio.Lock()      
 
 quarantine_cache = TTLCache(maxsize=50000, ttl=3600)  
 # 🚀 SCENARIO 14: Debounce cache to stop Bouncing Trolls
@@ -50,16 +48,11 @@ class SettingsRepo:
     async def get_settings(chat_id: int):
         if chat_id in settings_cache: return settings_cache[chat_id]
         
-        # 🚀 SCENARIO 12: Mutex lock prevents connection pool exhaustion
-        async with settings_lock:
-            if chat_id in settings_cache: return settings_cache[chat_id]
-            
-            # 🚀 SCENARIO 16: Ultra-fast DB Context Management
-            async with AsyncSessionLocal() as session:
-                stmt = select(GroupSettings).where(GroupSettings.chat_id == chat_id)
-                record = (await session.execute(stmt)).scalar_one_or_none()
-                if record: settings_cache[chat_id] = record
-                return record
+        async with AsyncSessionLocal() as session:
+            stmt = select(GroupSettings).where(GroupSettings.chat_id == chat_id)
+            record = (await session.execute(stmt)).scalar_one_or_none()
+            if record: settings_cache[chat_id] = record
+            return record
 
     @staticmethod
     @db_retry

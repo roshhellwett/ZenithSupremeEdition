@@ -160,18 +160,21 @@ async def group_monitor_handler(update: Update, context: ContextTypes.DEFAULT_TY
             violation, reason = await is_inappropriate(text_to_scan) 
         
         if settings.features in ["spam", "both"] and not violation and raw_text: 
-            violation, reason = is_flooding(user.id, msg.media_group_id)
+            violation, reason = is_flooding(user.id, msg.media_group_id, strength=settings.strength)
     
         if violation:
             try:
                 await safe_delete(msg)
                 strikes = await GroupRepo.process_violation(user.id, chat_id)
-                if strikes >= 3:
+                # Ban threshold varies by group strength setting
+                ban_thresholds = {"low": 5, "medium": 3, "strict": 1}
+                ban_limit = ban_thresholds.get(settings.strength, 3)
+                if strikes >= ban_limit:
                     await context.bot.ban_chat_member(chat_id, user.id)
                     alert = await safe_send(context, chat_id, f"🚨 <b>BANNED:</b> @{user.username} for repeated violations.", parse_mode="HTML")
                     await notify_owner(context, chat_id, settings.owner_id, settings.group_name, user.username, reason, "BANNED")
                 else:
-                    alert = await safe_send(context, chat_id, f"🛡️ <b>WARNING:</b> @{user.username}, message deleted. Strike {strikes}/3.", parse_mode="HTML")
+                    alert = await safe_send(context, chat_id, f"🛡️ <b>WARNING:</b> @{user.username}, message deleted. Strike {strikes}/{ban_limit}.", parse_mode="HTML")
                     await notify_owner(context, chat_id, settings.owner_id, settings.group_name, user.username, reason, f"Deleted (Strike {strikes})")
                 
                 fire_and_forget(animate_and_delete(context, alert, seconds=5))

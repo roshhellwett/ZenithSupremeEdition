@@ -73,7 +73,7 @@ async def cmd_zenith(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = " ".join(context.args) if context.args else ""
     if not text and msg.caption: text = msg.caption.replace("/zenith", "").strip()
 
-    history_text = msg.reply_to_message.text or msg.reply_to_message.caption if msg.reply_to_message else None
+    history_text = (msg.reply_to_message.text or msg.reply_to_message.caption) if msg.reply_to_message else None
 
     if not text and not history_text: 
         return await msg.reply_text("Please provide a question or reply to a message with /zenith !")

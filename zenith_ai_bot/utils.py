@@ -65,10 +65,22 @@ def sanitize_telegram_html(raw_text: str) -> str:
     # Convert markdown bold to HTML bold safely
     txt = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", txt)
     
-    # 🚀 CRITICAL REFINEMENT: Strip unsupported web tags that crash Telegram
-    txt = re.sub(r"<img[^>]*>", "[Image Omitted]", txt, flags=re.IGNORECASE)
-    txt = re.sub(r"</?(p|div|span|h[1-6]|ul|li|ol|script|style)[^>]*>", "\n", txt, flags=re.IGNORECASE)
+    # Replace <br> with newline before stripping
     txt = re.sub(r"<br\s*/?>", "\n", txt, flags=re.IGNORECASE)
+    
+    # Replace block-level tags with newlines before stripping
+    txt = re.sub(r"<img[^>]*>", "[Image Omitted]", txt, flags=re.IGNORECASE)
+    
+    # Allowlist approach: only keep Telegram-safe tags, strip everything else
+    # Allowed: <b>, <i>, <u>, <s>, <code>, <pre>, <a href="...">
+    allowed_pattern = re.compile(
+        r'<(?!'
+        r'/?b>|/?i>|/?u>|/?s>|/?code>|/?pre>|'
+        r'a\s+href=["\'][^"\']*["\'][^>]*>|/a>'
+        r')[^>]*>',
+        re.IGNORECASE
+    )
+    txt = allowed_pattern.sub("", txt)
     
     # Clean up massive gaps created by stripping tags
     txt = re.sub(r'\n{3,}', '\n\n', txt)

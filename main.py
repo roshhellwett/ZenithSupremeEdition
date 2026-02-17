@@ -18,15 +18,18 @@ logger = setup_logger("GATEWAY")
 webhook_rate = TTLCache(maxsize=500000, ttl=5)
 
 async def rate_limit(request: Request):
-    # 🚀 FAANG FIX: Extract true user IP behind Railway/AWS Load Balancers
+    # Extract true user IP behind Railway/AWS Load Balancers
     ip = request.headers.get("x-forwarded-for", request.client.host if request.client else "unknown").split(",")[0].strip()
     
-    # 🚀 FAANG FIX: Never rate-limit authenticated webhook paths. 
-    # Telegram sends thousands of requests per second. Limiting this blocks the bot.
+    webhook_rate[ip] = webhook_rate.get(ip, 0) + 1
+
+    # Webhook paths get a much higher limit to accommodate Telegram's volume,
+    # but are still protected against unauthenticated DDoS
     if "/webhook/" in request.url.path:
+        if webhook_rate[ip] > 200:
+            return False
         return True
         
-    webhook_rate[ip] = webhook_rate.get(ip, 0) + 1
     if webhook_rate[ip] > 50:
         return False
     return True

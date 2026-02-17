@@ -1,13 +1,3 @@
-# --- STRICT MATCH ONLY ---
-# These words are only banned if they appear as standalone words.
-# We do NOT check substrings for these to avoid false positives.
-# Example: "ass" is banned, but "class" is allowed.
-STRICT_BAD_WORDS = [
-    "ass", "sex", "sexy", "porn", "xxx", "anal", "tit", "tits", 
-    "boob", "boobs", "cum", "fag", "hoe", "slut", "dick", "cock",
-    "die", "kill", "hell"
-]
-
 BANNED_WORDS = [
     # --- [EN] Stage 1 & 2 English ---
     "ass", "asshole", "bastard", "bitch", "bloody", "bollocks", "bullshit",

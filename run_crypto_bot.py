@@ -61,7 +61,7 @@ async def cmd_keygen(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text("⚠️ <b>Invalid Format.</b> Use: <code>/activate [YOUR_KEY]</code>", parse_mode="HTML")
-    key_string = html.escape(context.args[0].strip())
+    key_string = context.args[0].strip()
     success, msg = await SubscriptionRepo.redeem_key(update.effective_user.id, key_string)
     await update.message.reply_text(msg, parse_mode="HTML")
 
