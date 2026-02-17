@@ -1,4 +1,5 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from core.config import ADMIN_USER_ID
 
 def get_main_dashboard(is_pro: bool = False):
     """Professional institutional-grade trading terminal dashboard."""
@@ -16,7 +17,8 @@ def get_main_dashboard(is_pro: bool = False):
          InlineKeyboardButton("📈 Smart Money Pulse", callback_data="ui_volume")],
         [InlineKeyboardButton("🆕 New Pair Scanner", callback_data="ui_new_pairs"),
          InlineKeyboardButton("📡 Live Orderflow", callback_data="ui_whale_radar")],
-        [InlineKeyboardButton(f"{pro_badge} {tier} ACCESS", callback_data="ui_pro_info")]
+        [InlineKeyboardButton(f"{pro_badge} {tier} ACCESS", callback_data="ui_pro_info"),
+         InlineKeyboardButton("💬 Buy Pro", url=f"tg://user?id={ADMIN_USER_ID}")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
