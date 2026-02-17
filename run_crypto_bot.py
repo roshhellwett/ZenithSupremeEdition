@@ -1,8 +1,9 @@
 import asyncio
 import random
+import html
 from fastapi import APIRouter, Request, Response
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.error import BadRequest
+from telegram.error import BadRequest, Forbidden
 from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandler, ContextTypes
 
 from core.logger import setup_logger
@@ -14,21 +15,26 @@ logger = setup_logger("SVC_WHALE")
 router = APIRouter()
 bot_app = None
 background_tasks = set()
-alert_queue = asyncio.Queue(maxsize=10000)
+
+# 🚀 FAANG SRE FIX: Enforced Queue limit to prevent RAM exhaustion
+alert_queue = asyncio.Queue(maxsize=50000)
 
 def track_task(task):
     background_tasks.add(task)
     task.add_done_callback(background_tasks.discard)
 
-async def safe_loop(name, coro):
+async def safe_loop(name, coro_func):
+    """Executes background loops with Exponential Backoff Auto-Healing."""
+    delay = 5
     while True:
         try:
-            await coro()
+            await coro_func()
         except asyncio.CancelledError:
             break
         except Exception as e:
-            logger.error(f"{name} crashed: {e}")
-            await asyncio.sleep(5)
+            logger.error(f"💥 {name} CRITICAL CRASH: {e}")
+            await asyncio.sleep(delay)
+            delay = min(delay * 2, 60) # Cap at 60 seconds
 
 # --- 🚀 ASYNC START HANDLER ---
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -60,20 +66,18 @@ async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text("⚠️ <b>Invalid Format.</b> Use: <code>/activate [YOUR_KEY]</code>", parse_mode="HTML")
         
-    key_string = context.args[0].strip()
+    key_string = html.escape(context.args[0].strip())
     success, msg = await SubscriptionRepo.redeem_key(update.effective_user.id, key_string)
     await update.message.reply_text(msg, parse_mode="HTML")
 
 # --- 🔍 TOKEN AUDIT CORE ENGINE ---
 async def perform_audit_scan(user_id: int, contract: str, msg, is_pro: bool):
-    """Runs the audit and saves it to the user's vault."""
     try:
         await msg.edit_text(f"<i>Establishing RPC connection to {contract[:6]}...</i>", parse_mode="HTML")
         await asyncio.sleep(0.6)
         await msg.edit_text(f"<i>Executing bytecode vulnerability scan...</i>", parse_mode="HTML")
         await asyncio.sleep(0.8)
         
-        # 🗂️ Save to Vault
         await SubscriptionRepo.save_audit(user_id, contract)
         
         if is_pro:
@@ -92,7 +96,7 @@ async def perform_audit_scan(user_id: int, contract: str, msg, is_pro: bool):
             )
             keyboard = [
                 [InlineKeyboardButton("⚡ Execute Trade (Jupiter)", url="https://jup.ag/")],
-                [InlineKeyboardButton("🗂️ Manage Saved Audits", callback_data="ui_saved_audits")],
+                [InlineKeyboardButton("🗂️ View Saved Audits", callback_data="ui_saved_audits")],
                 [InlineKeyboardButton("🔙 Main Menu", callback_data="ui_main_menu")]
             ]
             await msg.edit_text(report, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
@@ -108,18 +112,19 @@ async def perform_audit_scan(user_id: int, contract: str, msg, is_pro: bool):
                 f"⚠️ <i>Upgrade to Zenith Pro for comprehensive contract decompilation and exact tax rates.</i>"
             )
             keyboard = [
-                [InlineKeyboardButton("🗂️ Manage Saved Audits", callback_data="ui_saved_audits")],
+                [InlineKeyboardButton("🗂️ View Saved Audits", callback_data="ui_saved_audits")],
                 [InlineKeyboardButton("🔙 Main Menu", callback_data="ui_main_menu")]
             ]
             await msg.edit_text(report, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode="HTML")
     except BadRequest:
-        pass # Handle cases where message is deleted mid-edit
+        pass 
 
 async def cmd_audit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         return await update.message.reply_text("⚠️ <b>Input Required:</b> Please provide a valid contract address.\nExample: <code>/audit 0x6982508145454Ce325dDbE47a25d4ec3d2311933</code>", parse_mode="HTML")
     
-    contract = context.args[0]
+    # 🚀 SECURITY FIX: HTML Escaping to prevent Telegram Parse errors
+    contract = html.escape(context.args[0][:150])
     user_id = update.effective_user.id
     msg = await update.message.reply_text(f"<i>Initializing...</i>", parse_mode="HTML")
     
@@ -163,13 +168,12 @@ async def handle_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif query.data == "ui_audit":
             await query.edit_message_text("🔍 <b>Smart Contract Auditor</b>\n\nTo scan a token for vulnerabilities, send the contract address in the chat:\n\n<code>/audit 0xYourContractAddressHere</code>", reply_markup=get_back_button(), parse_mode="HTML")
         
-        # --- 🗂️ SAVED AUDITS MANAGER ---
         elif query.data == "ui_saved_audits":
             audits = await SubscriptionRepo.get_saved_audits(user_id)
             if not audits:
                 await query.edit_message_text("🗂️ <b>Audit Vault</b>\n\nYou currently have no saved audits in your history.\nRun a scan by sending <code>/audit [contract]</code>.", reply_markup=get_back_button(), parse_mode="HTML")
             else:
-                await query.edit_message_text("🗂️ <b>Audit Vault</b>\n\nSelect a previously scanned contract to view the security report, or remove it from your history.", reply_markup=get_audits_keyboard(audits), parse_mode="HTML")
+                await query.edit_message_text("🗂️ <b>Audit Vault</b>\n\nSelect a previously scanned contract to view the security report or execute a trade.", reply_markup=get_audits_keyboard(audits), parse_mode="HTML")
                 
         elif query.data.startswith("ui_del_audit_"):
             audit_id = int(query.data.split("_")[-1])
@@ -223,29 +227,29 @@ async def handle_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
                 await query.edit_message_text(pulse_data, reply_markup=get_back_button(), parse_mode="HTML")
     except BadRequest:
-        pass # Safely ignore spam-click UI errors
+        pass
 
 # --- 🌊 LIVE BLOCKCHAIN DISPATCHER ---
 async def alert_dispatcher():
     while True:
         chat_id, text = await alert_queue.get()
-        try: await bot_app.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=True)
-        except Exception: pass 
+        try: 
+            await bot_app.bot.send_message(chat_id=chat_id, text=text, parse_mode="HTML", disable_web_page_preview=True)
+        except Forbidden:
+            # 🚀 FAANG SRE FIX: Zombie Connection Slayer
+            # If the user blocked the bot, permanently turn off their radar to save DB and RAM IO overhead
+            await SubscriptionRepo.toggle_alerts(chat_id, False)
+            logger.info(f"🛡️ Auto-Heal: Disabled alerts for blocked user {chat_id}")
+        except Exception as e:
+            logger.error(f"⚠️ Dispatcher failed for {chat_id}: {e}")
+            
         alert_queue.task_done()
         await asyncio.sleep(0.05)
 
-# 🚀 ENTERPRISE FIX: Real Historical Hashes to prevent 404 Errors on Explorer links
 def get_real_historical_hash(network: str) -> str:
-    """Provides mathematically valid, real-world historical transaction hashes for the simulation."""
-    if network == "Solana":
-        # A real historical Solana transaction signature
-        return "5WbqbK7U3v2D42x2VWeWjNnB2oK8Yj5x1Z1QhZ3f4W4h3X5f5F5D5S5A5G5H5J5K5L5Z5X5C5V5B5N5M5Q5W5E5"
-    elif network == "Tron":
-        # A real historical Tron transaction hash
-        return "853793d552635f533aa982b92b35b00e63a1c14e526154563a56315263a56315"
-    else:
-        # A real historical Ethereum transaction hash (Vitalik Buterin transaction)
-        return "0x5c504ed432cb51138bcf09aa5e8a410dd4a1e204ef84bfed1be16dfba1b22060"
+    if network == "Solana": return "5WbqbK7U3v2D42x2VWeWjNnB2oK8Yj5x1Z1QhZ3f4W4h3X5f5F5D5S5A5G5H5J5K5L5Z5X5C5V5B5N5M5Q5W5E5"
+    elif network == "Tron": return "853793d552635f533aa982b92b35b00e63a1c14e526154563a56315263a56315"
+    else: return "0x5c504ed432cb51138bcf09aa5e8a410dd4a1e204ef84bfed1be16dfba1b22060"
 
 async def active_blockchain_watcher():
     coins = [("USDC", "Ethereum"), ("USDT", "Tron"), ("ETH", "Ethereum"), ("WBTC", "Ethereum"), ("SOL", "Solana")]
@@ -269,11 +273,11 @@ async def active_blockchain_watcher():
         amount_pro = random.randint(1000000, 50000000) if coin not in ["ETH", "WBTC"] else random.randint(500, 5000)
         amount_free = random.randint(50000, 250000) if coin not in ["ETH", "WBTC"] else random.randint(10, 50)
         
-        # Pulling the real historical hash so the link never breaks
         tx_hash_pro = get_real_historical_hash(network)
 
         # Dispatch to PRO users
         for user_id in pro_users:
+            # 🚀 THE FATAL BUG FIX: Removed illegal <small> tag
             pro_text = (
                 f"🚨 <b>LARGE-CAP ON-CHAIN TRANSFER</b>\n\n"
                 f"<b>Asset:</b> {amount_pro:,} {coin}\n"
@@ -281,9 +285,10 @@ async def active_blockchain_watcher():
                 f"<b>Destination:</b> {dest}\n"
                 f"<b>Hash:</b> <a href='{explorer_url}{tx_hash_pro}'>{tx_hash_pro[:8]}...{tx_hash_pro[-6:]}</a>\n\n"
                 f"<i>Action:</i> <a href='https://app.uniswap.org/'>[Execute Trade]</a>\n"
-                f"<i><small>(Note: Diagnostics Mode - Hash is a historical placeholder)</small></i>"
+                f"<i>(Note: Diagnostics Mode - Hash is a historical placeholder)</i>"
             )
-            await alert_queue.put((user_id, pro_text))
+            try: alert_queue.put_nowait((user_id, pro_text))
+            except asyncio.QueueFull: pass
 
         # Dispatch to FREE users
         for user_id in free_users:
@@ -295,7 +300,8 @@ async def active_blockchain_watcher():
                 f"<b>Hash:</b> <i>[Redacted - Pro Required]</i>\n\n"
                 f"<i>Upgrade to Zenith Pro for unredacted tracking and execution links.</i>"
             )
-            await alert_queue.put((user_id, free_text))
+            try: alert_queue.put_nowait((user_id, free_text))
+            except asyncio.QueueFull: pass
 
 # --- 🚀 LIFECYCLE ---
 async def start_service():
@@ -323,6 +329,7 @@ async def start_service():
             await bot_app.bot.set_webhook(url=webhook_path, secret_token=WEBHOOK_SECRET, allowed_updates=Update.ALL_TYPES)
         except Exception: pass
 
+    # 🚀 FAANG FIX: Use the resilient wrapper function to prevent permanent loops crashes
     track_task(asyncio.create_task(safe_loop("dispatcher", alert_dispatcher)))
     track_task(asyncio.create_task(safe_loop("watcher", active_blockchain_watcher)))
 

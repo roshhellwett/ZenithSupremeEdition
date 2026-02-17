@@ -7,7 +7,8 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from core.config import DATABASE_URL, DB_POOL_SIZE
 from zenith_crypto_bot.models import CryptoBase, Subscription, ActivationKey, CryptoUser, SavedAudit
 
-engine = create_async_engine(DATABASE_URL, pool_size=DB_POOL_SIZE)
+# 🚀 FAANG SRE FIX: pool_pre_ping ensures the bot auto-reconnects if the DB drops
+engine = create_async_engine(DATABASE_URL, pool_size=DB_POOL_SIZE, pool_pre_ping=True)
 AsyncSessionLocal = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 async def init_crypto_db():
@@ -97,17 +98,17 @@ class SubscriptionRepo:
     async def save_audit(user_id: int, contract: str):
         """Saves an audit and strictly bounds history to 10 records per user."""
         async with AsyncSessionLocal() as session:
-            # Prevent duplicate spam
             stmt = select(SavedAudit).where(SavedAudit.user_id == user_id, SavedAudit.contract == contract)
             exists = (await session.execute(stmt)).scalar_one_or_none()
             if exists:
                 exists.saved_at = datetime.now(timezone.utc)
             else:
-                # Prune old records to maintain strict DB hygiene
+                # 🚀 FAANG FIX: Safely slice all audits beyond the 9th index to prevent DB bloat
                 count_stmt = select(SavedAudit).where(SavedAudit.user_id == user_id).order_by(SavedAudit.saved_at.desc())
                 audits = (await session.execute(count_stmt)).scalars().all()
                 if len(audits) >= 10:
-                    await session.delete(audits[-1])
+                    for extra_audit in audits[9:]:
+                        await session.delete(extra_audit)
                 session.add(SavedAudit(user_id=user_id, contract=contract[:100]))
             await session.commit()
 
