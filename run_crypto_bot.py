@@ -1,5 +1,6 @@
 import asyncio
 import random
+import string
 from fastapi import APIRouter, Request, Response
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.error import BadRequest
@@ -234,11 +235,23 @@ async def alert_dispatcher():
         alert_queue.task_done()
         await asyncio.sleep(0.05)
 
+# 🚀 PHASE 2 FIX: Cryptographically Accurate Hash Simulator
+def generate_mock_hash(network: str) -> str:
+    if network == "Solana":
+        # Base58 Format
+        chars = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+        return "5" + "".join(random.choices(chars, k=87))
+    elif network == "Tron":
+        # 64-char Hexadecimal
+        return "".join(random.choices("0123456789abcdef", k=64))
+    else:
+        # Ethereum/EVM Format (0x + 64-char Hexadecimal)
+        return "0x" + "".join(random.choices("0123456789abcdef", k=64))
+
 async def active_blockchain_watcher():
     coins = [("USDC", "Ethereum"), ("USDT", "Tron"), ("ETH", "Ethereum"), ("WBTC", "Ethereum"), ("SOL", "Solana")]
     destinations = ["Binance Deposit", "Coinbase Hot Wallet", "Kraken", "Unknown DEX Route", "Wintermute OTC"]
     
-    # 🚀 FIX: Dynamic Routing to correct Block Explorers
     explorer_map = {
         "Ethereum": "https://etherscan.io/tx/",
         "Tron": "https://tronscan.org/#/transaction/",
@@ -256,7 +269,9 @@ async def active_blockchain_watcher():
         
         amount_pro = random.randint(1000000, 50000000) if coin not in ["ETH", "WBTC"] else random.randint(500, 5000)
         amount_free = random.randint(50000, 250000) if coin not in ["ETH", "WBTC"] else random.randint(10, 50)
-        tx_hash_pro = f"0x{random.randint(100000,999999)}abc{random.randint(100000,999999)}def"
+        
+        # Generate mathematically accurate signature
+        tx_hash_pro = generate_mock_hash(network)
 
         # Dispatch to PRO users
         for user_id in pro_users:
@@ -265,7 +280,7 @@ async def active_blockchain_watcher():
                 f"<b>Asset:</b> {amount_pro:,} {coin}\n"
                 f"<b>Network:</b> {network}\n"
                 f"<b>Destination:</b> {dest}\n"
-                f"<b>Hash:</b> <a href='{explorer_url}{tx_hash_pro}'>{tx_hash_pro[:10]}...</a>\n\n"
+                f"<b>Hash:</b> <a href='{explorer_url}{tx_hash_pro}'>{tx_hash_pro[:8]}...{tx_hash_pro[-6:]}</a>\n\n"
                 f"<i>Action:</i> <a href='https://app.uniswap.org/'>[Execute Trade]</a>"
             )
             await alert_queue.put((user_id, pro_text))
