@@ -4,6 +4,13 @@ from datetime import datetime, timezone
 
 CryptoBase = declarative_base()
 
+class CryptoUser(CryptoBase):
+    """Saves user preferences so radar doesn't turn off when server restarts."""
+    __tablename__ = "crypto_users"
+    user_id = Column(BigInteger, primary_key=True)
+    alerts_enabled = Column(Boolean, default=False)
+    joined_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
 class Subscription(CryptoBase):
     __tablename__ = "crypto_subscriptions"
     user_id = Column(BigInteger, primary_key=True)
