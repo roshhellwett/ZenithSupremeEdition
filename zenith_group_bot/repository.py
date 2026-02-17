@@ -283,7 +283,7 @@ class ScheduleRepo:
     @db_retry
     async def get_due_messages(current_hour: int, current_minute: int) -> list:
         async with AsyncSessionLocal() as session:
-            now = datetime.now(timezone.utc)
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
             one_hour_ago = now - timedelta(hours=1)
             stmt = select(ScheduledMessage).where(
                 ScheduledMessage.is_active == True,
@@ -300,7 +300,7 @@ class ScheduleRepo:
         async with AsyncSessionLocal() as session:
             stmt = update(ScheduledMessage).where(
                 ScheduledMessage.id == schedule_id,
-            ).values(last_sent=datetime.now(timezone.utc))
+            ).values(last_sent=datetime.now(timezone.utc).replace(tzinfo=None))
             await session.execute(stmt)
             await session.commit()
 
