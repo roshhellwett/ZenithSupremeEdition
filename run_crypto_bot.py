@@ -61,7 +61,7 @@ async def cmd_audit(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = await update.message.reply_text(f"⏳ Scanning contract <code>{contract[:8]}...</code>", parse_mode="HTML")
     await asyncio.sleep(2) # Simulating API processing time
     
-    # 🚀 REAL LIFE UPGRADE: Show difference in tiers
+    # Show difference in tiers
     days_left = await SubscriptionRepo.get_days_left(update.effective_user.id)
     if days_left > 0:
         await msg.edit_text(f"🛡️ <b>PRO AUDIT: {contract[:8]}...</b>\n\n✅ <b>Honeypot:</b> Negative\n✅ <b>Mint Function:</b> Disabled\n✅ <b>Ownership:</b> Renounced\n📊 <b>Tax:</b> Buy 0% | Sell 0%\n\n<i>Safe to trade.</i>", parse_mode="HTML")
@@ -89,7 +89,6 @@ async def handle_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(help_text, parse_mode="HTML")
 
     elif query.data == "ui_whale_radar":
-        # 🚀 SRE FIX: Actually save the user so the bot knows who to alert
         if days_left > 0:
             pro_subscribers.add(user_id)
             free_subscribers.discard(user_id)
@@ -121,19 +120,29 @@ async def alert_dispatcher():
         except asyncio.CancelledError: break
 
 async def active_blockchain_watcher():
-    """Generates real-time alerts and routes them to active subscribers."""
+    """Generates randomized mock data so it doesn't spam until the real API is connected."""
+    coins = ["USDC", "USDT", "ETH", "WBTC", "PEPE", "SHIB", "SOL"]
+    destinations = ["Binance", "Coinbase", "Kraken", "Unknown Wallet", "Dex Swap"]
+
     while True:
         try:
-            await asyncio.sleep(45) # Wait 45 seconds between alerts
+            # 🚀 SRE FIX: Wait 5 FULL MINUTES between alerts to stop the spam!
+            await asyncio.sleep(300) 
             
-            # 1. Dispatch to PRO users (High Value, Full Info)
+            # Generate random realistic data
+            coin = random.choice(coins)
+            dest = random.choice(destinations)
+            amount = random.randint(50, 500) if coin in ["ETH", "WBTC"] else random.randint(100000, 5000000)
+            formatted_amount = f"{amount:,}"
+
+            # 1. Dispatch to PRO users
             for user_id in list(pro_subscribers):
-                pro_text = "🐋 <b>WHALE ALERT (PRO)</b>\n💎 <b>2,500,000 USDC</b> moved to Binance\n🔗 <b>Tx:</b> <a href='https://etherscan.io'>0x4a5b...9c8d</a>\n🛒 <a href='https://app.uniswap.org/'>[Instant Swap]</a>"
+                pro_text = f"🐋 <b>WHALE ALERT (PRO)</b>\n💎 <b>{formatted_amount} {coin}</b> moved to {dest}\n🔗 <b>Tx:</b> <a href='https://etherscan.io'>0x{random.randint(1000,9999)}...{random.randint(1000,9999)}</a>\n🛒 <a href='https://app.uniswap.org/'>[Instant Swap]</a>"
                 await alert_queue.put((user_id, pro_text))
 
-            # 2. Dispatch to FREE users (Low Value, Censored)
+            # 2. Dispatch to FREE users
             for user_id in list(free_subscribers):
-                free_text = "🚨 <b>DOLPHIN ALERT (FREE)</b>\n💰 <b>65,000 USDC</b> moved to Exchange\n🔗 <b>Tx:</b> [PRO REQUIRED]\n\n<i>Upgrade to Pro for full wallet links & instant trading buttons.</i>"
+                free_text = f"🚨 <b>DOLPHIN ALERT (FREE)</b>\n💰 <b>{formatted_amount} {coin}</b> moved to {dest}\n🔗 <b>Tx:</b> [PRO REQUIRED]\n\n<i>Upgrade to Pro for full wallet links & instant trading buttons.</i>"
                 await alert_queue.put((user_id, free_text))
 
         except asyncio.CancelledError:
@@ -150,7 +159,7 @@ async def start_service():
     bot_app.add_handler(CommandHandler("start", cmd_start))
     bot_app.add_handler(CommandHandler("activate", cmd_activate))
     bot_app.add_handler(CommandHandler("keygen", cmd_keygen))
-    bot_app.add_handler(CommandHandler("audit", cmd_audit)) # Added Audit
+    bot_app.add_handler(CommandHandler("audit", cmd_audit)) 
     bot_app.add_handler(CallbackQueryHandler(handle_dashboard))
 
     await bot_app.initialize()
