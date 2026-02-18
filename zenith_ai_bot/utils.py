@@ -10,6 +10,21 @@ _rate_free = TTLCache(maxsize=10000, ttl=3600.0)
 _rate_pro = TTLCache(maxsize=10000, ttl=3600.0)
 _ai_db_engine = None
 
+PROMPT_INJECTION_PATTERNS = [
+    re.compile(r'ignore\s+(all\s+)?previous\s+instructions', re.IGNORECASE),
+    re.compile(r'ignore\s+(all\s+)?(your\s+)?(instructions|rules|guidelines)', re.IGNORECASE),
+    re.compile(r'you\s+are\s+(now\s+)?(a|an|different|new)', re.IGNORECASE),
+    re.compile(r'system\s*:\s*', re.IGNORECASE),
+    re.compile(r'\(system\s*\)', re.IGNORECASE),
+    re.compile(r'<\s*system\s*>', re.IGNORECASE),
+    re.compile(r'drop\s+the\s+(system|persona|character)', re.IGNORECASE),
+    re.compile(r'forget\s+(everything|all|your)', re.IGNORECASE),
+    re.compile(r'new\s+instruction[s]?\s*:', re.IGNORECASE),
+    re.compile(r'override\s+(your\s+)?(system|programming)', re.IGNORECASE),
+]
+
+MAX_INPUT_LENGTH = 5000
+
 
 async def get_db_engine():
     global _ai_db_engine
@@ -17,7 +32,17 @@ async def get_db_engine():
         from core.config import DATABASE_URL
         if DATABASE_URL:
             from sqlalchemy.ext.asyncio import create_async_engine
-            _ai_db_engine = create_async_engine(DATABASE_URL, pool_size=5, max_overflow=10, pool_pre_ping=True)
+            _ai_db_engine = create_async_engine(
+                DATABASE_URL,
+                pool_size=5,
+                max_overflow=10,
+                pool_pre_ping=True,
+                connect_args={
+                    "ssl": True,
+                    "connect_timeout": 10,
+                    "command_timeout": 30,
+                }
+            )
     return _ai_db_engine
 
 
@@ -99,3 +124,18 @@ def sanitize_telegram_html(raw_text: str) -> str:
     txt = re.sub(r'\n{3,}', '\n\n', txt)
 
     return txt.strip()
+
+
+def sanitize_user_input(text: str) -> str:
+    if not text:
+        return ""
+    
+    sanitized = text[:MAX_INPUT_LENGTH]
+    
+    for pattern in PROMPT_INJECTION_PATTERNS:
+        sanitized = pattern.sub("[FILTERED]", sanitized)
+    
+    sanitized = sanitized.replace("\x00", "")
+    sanitized = re.sub(r"[\u200b-\u200f\u2028-\u202f]", "", sanitized)
+    
+    return sanitized.strip()

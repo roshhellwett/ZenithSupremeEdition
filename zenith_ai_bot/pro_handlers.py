@@ -15,6 +15,7 @@ from zenith_ai_bot.ui import (
     get_confirm_clear_history_msg, get_persona_preview_msg, get_confirm_persona_switch,
     get_pro_feature_msg, get_limit_reached_msg, get_generating_response_msg,
 )
+from zenith_ai_bot.utils import sanitize_user_input
 
 logger = setup_logger("AI_PRO")
 
@@ -86,6 +87,8 @@ async def cmd_research(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
 
     topic = " ".join(context.args) if context.args else ""
+    topic = sanitize_user_input(topic)
+    
     if not topic:
         return await update.message.reply_text(
             "🔬 <b>Deep Research</b>\n\n"
@@ -146,8 +149,11 @@ async def cmd_summarize(update: Update, context: ContextTypes.DEFAULT_TYPE):
     msg = update.message
 
     text = " ".join(context.args) if context.args else ""
+    text = sanitize_user_input(text)
+    
     if not text and msg.reply_to_message:
         text = msg.reply_to_message.text or msg.reply_to_message.caption or ""
+        text = sanitize_user_input(text)
     if not text:
         return await msg.reply_text(
             "📝 <b>Text Summarizer</b>\n\n"
@@ -197,9 +203,23 @@ async def cmd_code(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_pro:
         return await update.message.reply_text(
             "🔒 <b>Pro Feature: Code Generator</b>\n\n"
-            "Get production-ready code from natural language descriptions.\n"
+            "Get production-ready code from natural language descriptions."
             "Upgrade to <b>Zenith Pro</b> to unlock.\n\n"
             "<code>/activate [YOUR_KEY]</code>",
+            parse_mode="HTML",
+        )
+
+    description = " ".join(context.args) if context.args else ""
+    description = sanitize_user_input(description)
+    
+    if not description:
+        return await update.message.reply_text(
+            "💻 <b>Code Generator</b>\n\n"
+            "<b>Format:</b> <code>/code [DESCRIPTION]</code>\n\n"
+            "<b>Examples:</b>\n"
+            "• <code>/code Python FastAPI REST endpoint for user auth with JWT</code>\n"
+            "• <code>/code React component for a sortable data table</code>\n"
+            "• <code>/code Bash script to backup PostgreSQL database</code>",
             parse_mode="HTML",
         )
 
@@ -299,6 +319,8 @@ async def cmd_imagine(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
 
     description = " ".join(context.args) if context.args else ""
+    description = sanitize_user_input(description)
+    
     if not description:
         return await update.message.reply_text(
             "🎨 <b>Image Prompt Crafter</b>\n\n"

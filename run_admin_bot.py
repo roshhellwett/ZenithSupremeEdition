@@ -1,4 +1,5 @@
 import asyncio
+import time
 from functools import wraps
 from fastapi import APIRouter, Request, Response
 from telegram import Update
@@ -23,10 +24,36 @@ router = APIRouter()
 bot_app = None
 background_tasks = set()
 
+_admin_command_timestamps = {}
+
 
 def track_task(task):
     background_tasks.add(task)
     task.add_done_callback(background_tasks.discard)
+
+
+def rate_limit_admin(seconds: int = 10):
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(update: Update, context: ContextTypes.DEFAULT_TYPE):
+            user_id = update.effective_user.id
+            command = func.__name__
+            key = f"{user_id}:{command}"
+            now = time.time()
+            
+            if key in _admin_command_timestamps:
+                last_time = _admin_command_timestamps[key]
+                if now - last_time < seconds:
+                    if update.message:
+                        await update.message.reply_text(
+                            f"⏳ Please wait {seconds} seconds between {command} commands."
+                        )
+                    return
+            
+            _admin_command_timestamps[key] = now
+            return await func(update, context)
+        return wrapper
+    return decorator
 
 
 def admin_only(func):
@@ -51,6 +78,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @admin_only
+@rate_limit_admin(seconds=10)
 async def cmd_keygen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         days = int(context.args[0]) if context.args else 30
@@ -74,6 +102,7 @@ async def cmd_keygen(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @admin_only
+@rate_limit_admin(seconds=30)
 async def cmd_extend(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
@@ -123,6 +152,7 @@ async def cmd_extend(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @admin_only
+@rate_limit_admin(seconds=30)
 async def cmd_revoke(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(
@@ -219,6 +249,7 @@ async def cmd_subs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @admin_only
+@rate_limit_admin(seconds=60)
 async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(

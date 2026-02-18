@@ -3,6 +3,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
+from fastapi.middleware.cors import CORSMiddleware
 from cachetools import TTLCache
 
 from core.config import PORT, WEBHOOK_SECRET
@@ -18,15 +19,32 @@ logger = setup_logger("GATEWAY")
 
 webhook_rate = TTLCache(maxsize=500000, ttl=5)
 
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "X-XSS-Protection": "1; mode=block",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+    "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+}
+
+MAX_REQUEST_SIZE = 1_000_000  # 1MB
+
 
 async def rate_limit(request: Request):
-    ip = request.headers.get(
-        "x-forwarded-for", request.client.host if request.client else "unknown"
-    ).split(",")[0].strip()
-    webhook_rate[ip] = webhook_rate.get(ip, 0) + 1
+    client_ip = request.client.host if request.client else "unknown"
+    
+    webhook_rate[client_ip] = webhook_rate.get(client_ip, 0) + 1
     if "/webhook/" in request.url.path:
-        return webhook_rate[ip] <= 200
-    return webhook_rate[ip] <= 50
+        return webhook_rate[client_ip] <= 200
+    return webhook_rate[client_ip] <= 50
+
+
+async def check_request_size(request: Request):
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_REQUEST_SIZE:
+        return False
+    return True
 
 
 @asynccontextmanager
@@ -72,9 +90,27 @@ app = FastAPI(lifespan=lifespan)
 
 @app.middleware("http")
 async def global_protection(request: Request, call_next):
+    if not await check_request_size(request):
+        return JSONResponse({"error": "Payload too large. Max 1MB."}, status_code=413)
+    
     if not await rate_limit(request):
         return JSONResponse({"error": "Rate Limit Exceeded."}, status_code=429)
-    return await call_next(request)
+    
+    response = await call_next(request)
+    
+    for header, value in SECURITY_HEADERS.items():
+        response.headers[header] = value
+    
+    return response
+
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    logger.error(f"Unhandled exception on {request.url.path}: {exc}")
+    return JSONResponse(
+        {"error": "An internal error occurred"},
+        status_code=500
+    )
 
 
 app.include_router(run_group_bot.router)
