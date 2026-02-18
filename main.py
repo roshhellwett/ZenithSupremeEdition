@@ -12,6 +12,7 @@ import run_group_bot
 import run_ai_bot
 import run_crypto_bot
 import run_support_bot
+import run_admin_bot
 
 logger = setup_logger("GATEWAY")
 
@@ -46,6 +47,7 @@ async def lifespan(app: FastAPI):
         safe_start("AI", run_ai_bot.start_service),
         safe_start("CRYPTO", run_crypto_bot.start_service),
         safe_start("SUPPORT", run_support_bot.start_service),
+        safe_start("ADMIN", run_admin_bot.start_service),
     )
     yield
     logger.info("🛑 MONOLITH SHUTDOWN")
@@ -56,6 +58,7 @@ async def lifespan(app: FastAPI):
                 run_ai_bot.stop_service(),
                 run_crypto_bot.stop_service(),
                 run_support_bot.stop_service(),
+                run_admin_bot.stop_service(),
                 return_exceptions=True,
             ),
             timeout=10.0,
@@ -78,6 +81,7 @@ app.include_router(run_group_bot.router)
 app.include_router(run_ai_bot.router)
 app.include_router(run_crypto_bot.router)
 app.include_router(run_support_bot.router)
+app.include_router(run_admin_bot.router)
 
 
 @app.get("/health")

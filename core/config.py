@@ -13,6 +13,7 @@ WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "")
 
 CRYPTO_BOT_TOKEN = os.getenv("CRYPTO_BOT_TOKEN", "")
 SUPPORT_BOT_TOKEN = os.getenv("SUPPORT_BOT_TOKEN", "")
+ADMIN_BOT_TOKEN = os.getenv("ADMIN_BOT_TOKEN", "")
 ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", 0))
 ETH_RPC_URL = os.getenv("ETH_RPC_URL", "")
 SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "")
@@ -26,3 +27,16 @@ if DATABASE_URL:
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 DB_POOL_SIZE = int(os.getenv("DB_POOL_SIZE", 10))
+
+
+def is_owner(user_id: int) -> bool:
+    return user_id == ADMIN_USER_ID and ADMIN_USER_ID != 0
+
+
+def get_user_tier(user_id: int, days_left: int = 0) -> str:
+    if is_owner(user_id):
+        return "owner"
+    elif days_left > 0:
+        return "pro"
+    else:
+        return "free"

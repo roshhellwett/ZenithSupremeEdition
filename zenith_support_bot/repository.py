@@ -206,6 +206,22 @@ class TicketRepo:
 
     @staticmethod
     @db_retry
+    async def admin_close_ticket(ticket_id: int) -> bool:
+        async with AsyncSessionLocal() as session:
+            stmt = update(SupportTicket).where(
+                SupportTicket.id == ticket_id,
+                SupportTicket.status.in_(["open", "in_progress"]),
+            ).values(
+                status="closed",
+                updated_at=utc_now(),
+            )
+            result = await session.execute(stmt)
+            await session.commit()
+            ticket_cache.pop(f"ticket_{ticket_id}", None)
+            return result.rowcount > 0
+
+    @staticmethod
+    @db_retry
     async def get_stale_tickets(days: int = 7) -> list:
         async with AsyncSessionLocal() as session:
             cutoff = utc_now() - timedelta(days=days)

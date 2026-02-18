@@ -9,7 +9,7 @@ from telegram.ext import (
 )
 
 from core.logger import setup_logger
-from core.config import AI_BOT_TOKEN, WEBHOOK_URL, WEBHOOK_SECRET, ADMIN_USER_ID
+from core.config import AI_BOT_TOKEN, WEBHOOK_URL, WEBHOOK_SECRET
 from zenith_crypto_bot.repository import SubscriptionRepo
 from zenith_ai_bot.repository import (
     init_ai_db, dispose_ai_engine, ConversationRepo, UsageRepo,
@@ -167,54 +167,6 @@ async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     key = context.args[0].strip()
     success, msg = await SubscriptionRepo.redeem_key(update.effective_user.id, key)
     await update.message.reply_text(msg, parse_mode="HTML")
-
-
-async def cmd_keygen(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_USER_ID:
-        return await update.message.reply_text("⛔ Unauthorized.")
-    try:
-        days = int(context.args[0]) if context.args else 30
-    except ValueError:
-        return await update.message.reply_text("⚠️ Invalid day count. Usage: <code>/keygen [DAYS]</code>", parse_mode="HTML")
-    key = await SubscriptionRepo.generate_key(days)
-    await update.message.reply_text(f"🔑 <b>Key Generated:</b> <code>{key}</code>\nDuration: <b>{days} days</b>", parse_mode="HTML")
-
-
-async def cmd_extend(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_USER_ID:
-        return await update.message.reply_text("⛔ Unauthorized.")
-    if not context.args:
-        return await update.message.reply_text(
-            "⚠️ <b>Usage:</b> <code>/extend [USER_ID] [DAYS]</code>",
-            parse_mode="HTML",
-        )
-    try:
-        target_user_id = int(context.args[0])
-    except ValueError:
-        return await update.message.reply_text("⚠️ Invalid user ID.")
-    days = 30
-    if len(context.args) > 1:
-        try:
-            days = int(context.args[1])
-        except ValueError:
-            return await update.message.reply_text("⚠️ Invalid day count.")
-    success, msg_text = await SubscriptionRepo.extend_subscription(target_user_id, days)
-    await update.message.reply_text(msg_text, parse_mode="HTML")
-    if success:
-        try:
-            await bot_app.bot.send_message(
-                chat_id=target_user_id,
-                text=(
-                    f"💎 <b>PRO SUBSCRIPTION RENEWED</b>\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                    f"✅ <b>{days} days</b> have been added to your account.\n"
-                    f"Enjoy uninterrupted access to all Pro features!\n\n"
-                    f"<i>Type /start to open your terminal.</i>"
-                ),
-                parse_mode="HTML",
-            )
-        except Exception:
-            pass
 
 
 async def handle_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -423,8 +375,6 @@ async def start_service():
     bot_app.add_handler(CommandHandler("history", cmd_history))
     bot_app.add_handler(CommandHandler("imagine", cmd_imagine))
     bot_app.add_handler(CommandHandler("activate", cmd_activate))
-    bot_app.add_handler(CommandHandler("keygen", cmd_keygen))
-    bot_app.add_handler(CommandHandler("extend", cmd_extend))
     bot_app.add_handler(CallbackQueryHandler(handle_dashboard))
     bot_app.add_handler(InlineQueryHandler(inline_query))
 

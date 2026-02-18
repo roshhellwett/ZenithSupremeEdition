@@ -2,17 +2,20 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from core.formatters import format_progress_bar, format_datetime
 
 
-def get_support_dashboard(is_pro: bool, open_tickets: int = 0) -> InlineKeyboardMarkup:
-    ticket_limit = 15 if is_pro else 3
+def get_support_dashboard(is_pro: bool, open_tickets: int = 0, is_owner: bool = False) -> InlineKeyboardMarkup:
+    if is_owner:
+        ticket_limit = 999
+    else:
+        ticket_limit = 15 if is_pro else 3
     ticket_bar = format_progress_bar(open_tickets, ticket_limit)
     
     keyboard = [
-        [InlineKeyboardButton(f"{'💎' if is_pro else '🆓'} {'PRO ACTIVE' if is_pro else 'FREE TIER'}", callback_data="sup_status")],
+        [InlineKeyboardButton(f"{'👑' if is_owner else '💎' if is_pro else '🆓'} {'OWNER' if is_owner else 'PRO ACTIVE' if is_pro else 'FREE TIER'}", callback_data="sup_status")],
         [InlineKeyboardButton(f"🎫 My Tickets {ticket_bar}", callback_data="sup_my_tickets")],
         [InlineKeyboardButton("❓ FAQ", callback_data="sup_faq")],
     ]
     
-    if is_pro:
+    if is_owner or is_pro:
         keyboard.extend([
             [InlineKeyboardButton("➕ New Ticket", callback_data="sup_new_ticket")],
             [InlineKeyboardButton("📊 Analytics", callback_data="sup_stats")],
@@ -20,6 +23,12 @@ def get_support_dashboard(is_pro: bool, open_tickets: int = 0) -> InlineKeyboard
         ])
     else:
         keyboard.append([InlineKeyboardButton(f"➕ New Ticket ({open_tickets}/{ticket_limit})", callback_data="sup_new_ticket")])
+    
+    if is_owner:
+        keyboard.extend([
+            [InlineKeyboardButton("🎫 All Tickets (Admin)", callback_data="sup_all_tickets")],
+            [InlineKeyboardButton("➕ Add FAQ (Admin)", callback_data="sup_add_faq_admin")],
+        ])
     
     keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="sup_main_menu")])
     return InlineKeyboardMarkup(keyboard)
@@ -41,16 +50,29 @@ def get_ticket_keyboard(tickets: list, user_id: int = None) -> InlineKeyboardMar
     return InlineKeyboardMarkup(keyboard)
 
 
-def get_ticket_detail_keyboard(ticket_id: int, is_owner: bool = True, is_pro: bool = False, is_admin: bool = False) -> InlineKeyboardMarkup:
+def get_all_tickets_keyboard(tickets: list) -> InlineKeyboardMarkup:
+    keyboard = []
+    for ticket in tickets[:20]:
+        status_emoji = {"open": "🟢", "in_progress": "🟡", "resolved": "✅", "closed": "🔴"}.get(ticket.status, "⚪")
+        priority_emoji = {"low": "⬇️", "normal": "➡️", "high": "⬆️", "urgent": "🚨"}.get(ticket.priority, "➡️")
+        user_label = f"@{ticket.username}" if ticket.username else f"ID:{ticket.user_id}"
+        label = f"{status_emoji} #{ticket.id} {priority_emoji} {ticket.subject[:20]}... ({user_label})"
+        keyboard.append([InlineKeyboardButton(label, callback_data=f"sup_ticket_{ticket.id}")])
+    
+    keyboard.append([InlineKeyboardButton("🔙 Dashboard", callback_data="sup_main_menu")])
+    return InlineKeyboardMarkup(keyboard)
+
+
+def get_ticket_detail_keyboard(ticket_id: int, is_owner: bool = True, is_pro: bool = False, is_admin: bool = False, is_ticket_owner: bool = True) -> InlineKeyboardMarkup:
     keyboard = []
     
-    if is_owner:
+    if is_ticket_owner or is_owner:
         keyboard.append([InlineKeyboardButton("❌ Close Ticket", callback_data=f"sup_close_confirm_{ticket_id}")])
     
-    if is_pro:
+    if is_pro or is_owner:
         keyboard.append([InlineKeyboardButton("🏷️ Set Priority", callback_data=f"sup_priority_{ticket_id}")])
     
-    if is_admin:
+    if is_admin or is_owner:
         keyboard.append([InlineKeyboardButton("✅ Resolve", callback_data=f"sup_resolve_{ticket_id}")])
     
     keyboard.append([InlineKeyboardButton("🔙 Back", callback_data="sup_my_tickets")])
@@ -133,7 +155,7 @@ Your ticket has been submitted to our support team."""
     return msg
 
 
-def get_ticket_status_msg(ticket, is_pro: bool = False) -> str:
+def get_ticket_status_msg(ticket, is_pro: bool = False, is_owner: bool = False) -> str:
     status_map = {
         "open": "🟢 Open - Awaiting response",
         "in_progress": "🟡 In Progress - Being looked at",
@@ -212,17 +234,27 @@ def get_ticket_timeline(ticket) -> str:
     return timeline
 
 
-def get_welcome_msg(first_name: str, is_pro: bool, days_left: int = 0, ticket_count: int = 0) -> str:
-    tier_info = f"💎 <b>Pro</b> ({days_left} days left)" if is_pro else "🆓 <b>Free Tier</b>"
+def get_welcome_msg(first_name: str, is_pro: bool, days_left: int = 0, ticket_count: int = 0, is_owner: bool = False) -> str:
+    if is_owner:
+        tier_info = "👑 <b>OWNER</b> (Full Access)"
+    elif is_pro:
+        tier_info = f"💎 <b>Pro</b> ({days_left} days left)"
+    else:
+        tier_info = "🆓 <b>Free Tier</b>"
     
-    ticket_limit = 15 if is_pro else 3
-    ticket_bar = format_progress_bar(ticket_count, ticket_limit)
+    if is_owner:
+        ticket_limit = 999
+        ticket_bar = format_progress_bar(ticket_count, ticket_limit)
+    else:
+        ticket_limit = 15 if is_pro else 3
+        ticket_bar = format_progress_bar(ticket_count, ticket_limit)
     
     free_features = "• 3 open tickets\n• FAQ access\n• Status check"
     pro_features = "• 15 open tickets\n• AI auto-response\n• Priority support\n• Custom FAQ builder\n• Canned responses\n• Analytics\n• Auto-close tickets\n• Satisfaction ratings"
+    owner_features = "• Unlimited tickets\n• All Pro features\n• Admin panel\n• View all tickets\n• Manage FAQs\n• Resolve tickets"
     
     msg = f"""👋 <b>Welcome to Zenith Support, {first_name}!</b>
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 <b>Your Tier:</b> {tier_info}
 
@@ -233,9 +265,17 @@ def get_welcome_msg(first_name: str, is_pro: bool, days_left: int = 0, ticket_co
 {free_features}
 
 <b>Pro Features:</b>
-{pro_features}
+{pro_features}"""
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    if is_owner:
+        msg += f"""
+
+<b>👑 Owner Features:</b>
+{owner_features}"""
+
+    msg += f"""
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🆘 Need help? Create a ticket and we'll assist you!
 

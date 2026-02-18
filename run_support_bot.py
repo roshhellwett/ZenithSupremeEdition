@@ -8,7 +8,7 @@ from telegram.ext import ApplicationBuilder, CommandHandler, CallbackQueryHandle
 from telegram.error import RetryAfter, BadRequest, Forbidden
 
 from core.logger import setup_logger
-from core.config import SUPPORT_BOT_TOKEN, WEBHOOK_URL, WEBHOOK_SECRET, ADMIN_USER_ID
+from core.config import SUPPORT_BOT_TOKEN, WEBHOOK_URL, WEBHOOK_SECRET, is_owner
 from core.task_manager import fire_and_forget
 from zenith_crypto_bot.repository import SubscriptionRepo
 from zenith_support_bot.repository import (
@@ -18,6 +18,7 @@ from zenith_support_bot.ui import (
     get_support_dashboard, get_back_button, get_ticket_keyboard,
     get_ticket_detail_keyboard, get_faq_keyboard, get_welcome_msg,
     get_ticket_status_msg, get_ticket_created_msg, get_priority_keyboard,
+    get_all_tickets_keyboard,
 )
 from zenith_support_bot.ai_responder import generate_ai_response
 from zenith_support_bot.pro_handlers import (
@@ -53,29 +54,44 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     first_name = html.escape(update.effective_user.first_name or "User")
     days_left = await SubscriptionRepo.get_days_left(user_id)
     is_pro = days_left > 0
-    open_tickets = await TicketRepo.count_open_tickets(user_id) if not is_pro else 0
+    is_owner_user = is_owner(user_id)
+    open_tickets = await TicketRepo.count_open_tickets(user_id)
     
     await update.message.reply_text(
-        get_welcome_msg(first_name, is_pro, days_left),
-        reply_markup=get_support_dashboard(is_pro, open_tickets),
+        get_welcome_msg(first_name, is_pro, days_left, open_tickets, is_owner_user),
+        reply_markup=get_support_dashboard(is_pro, open_tickets, is_owner_user),
         parse_mode="HTML",
     )
 
 
 async def cmd_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    is_owner_user = is_owner(user_id)
     days_left = await SubscriptionRepo.get_days_left(user_id)
+    
+    if not is_owner_user and days_left <= 0:
+        await update.message.reply_text(
+            "🎫 <b>Subscribers Only</b>\n\n"
+            "You need an active subscription to create support tickets.\n\n"
+            "Use <code>/activate [KEY]</code> to activate your subscription.",
+            parse_mode="HTML",
+        )
+        return
+    
     is_pro = days_left > 0
     username = update.effective_user.username or update.effective_user.first_name or "Unknown"
     
-    max_tickets = 15 if is_pro else 3
+    max_tickets = 999 if is_owner_user else (15 if is_pro else 3)
     open_tickets = await TicketRepo.count_open_tickets(user_id)
     
     if open_tickets >= max_tickets:
+        upgrade_msg = ""
+        if not is_owner_user and not is_pro:
+            upgrade_msg = "💎 Upgrade to Pro for 15 tickets!"
         await update.message.reply_text(
             f"⚠️ <b>Ticket Limit Reached</b>\n\n"
             f"You have {open_tickets} open ticket(s). Maximum allowed: {max_tickets}\n\n"
-            f"{'💎 Upgrade to Pro for 15 tickets!' if not is_pro else ''}",
+            f"{upgrade_msg}",
             parse_mode="HTML",
         )
         return
@@ -106,7 +122,7 @@ async def cmd_ticket(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ticket = await TicketRepo.create_ticket(user_id, username, subject, description)
     
     ai_response = None
-    if is_pro:
+    if is_pro or is_owner_user:
         try:
             ai_response = await generate_ai_response(subject, description)
             if ai_response:
@@ -144,10 +160,11 @@ async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     days_left = await SubscriptionRepo.get_days_left(user_id)
     is_pro = days_left > 0
+    is_owner_user = is_owner(user_id)
 
     await update.message.reply_text(
-        get_ticket_status_msg(ticket, is_pro),
-        reply_markup=get_ticket_detail_keyboard(ticket.id, ticket.user_id == user_id, is_pro, user_id == ADMIN_USER_ID),
+        get_ticket_status_msg(ticket, is_pro, is_owner_user),
+        reply_markup=get_ticket_detail_keyboard(ticket.id, is_owner_user, is_pro, is_owner_user, ticket.user_id == user_id),
         parse_mode="HTML",
     )
 
@@ -174,8 +191,9 @@ async def cmd_faq(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     days_left = await SubscriptionRepo.get_days_left(user_id)
     is_pro = days_left > 0
+    is_owner_user = is_owner(user_id)
     
-    faqs = await FAQRepo.get_all_faqs(limit=50 if is_pro else 10)
+    faqs = await FAQRepo.get_all_faqs(limit=50 if (is_pro or is_owner_user) else 10)
     
     if not faqs:
         await update.message.reply_text(
@@ -207,7 +225,12 @@ async def cmd_close(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user_id = update.effective_user.id
-    success = await TicketRepo.close_ticket(ticket_id, user_id)
+    is_owner_user = is_owner(user_id)
+    
+    if is_owner_user:
+        success = await TicketRepo.admin_close_ticket(ticket_id)
+    else:
+        success = await TicketRepo.close_ticket(ticket_id, user_id)
     
     if success:
         await update.message.reply_text(
@@ -232,40 +255,6 @@ async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg, parse_mode="HTML")
 
 
-async def cmd_keygen(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_USER_ID:
-        return await update.message.reply_text("⛔ Unauthorized.")
-    try:
-        days = int(context.args[0]) if context.args else 30
-    except ValueError:
-        return await update.message.reply_text("⚠️ Invalid day count. Usage: <code>/keygen [DAYS]</code>", parse_mode="HTML")
-    key = await SubscriptionRepo.generate_key(days)
-    await update.message.reply_text(f"🔑 <b>Key Generated:</b> <code>{key}</code>\nDuration: <b>{days} days</b>", parse_mode="HTML")
-
-
-async def cmd_extend(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_USER_ID:
-        return await update.message.reply_text("⛔ Unauthorized.")
-    if not context.args:
-        return await update.message.reply_text(
-            "⚠️ <b>Usage:</b> <code>/extend [USER_ID] [DAYS]</code>\n"
-            "Example: <code>/extend 123456789 30</code>",
-            parse_mode="HTML",
-        )
-    try:
-        target_user_id = int(context.args[0])
-    except ValueError:
-        return await update.message.reply_text("⚠️ Invalid user ID.")
-    days = 30
-    if len(context.args) > 1:
-        try:
-            days = int(context.args[1])
-        except ValueError:
-            return await update.message.reply_text("⚠️ Invalid day count.")
-    success, msg = await SubscriptionRepo.extend_subscription(target_user_id, days)
-    await update.message.reply_text(msg, parse_mode="HTML")
-
-
 async def handle_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -274,32 +263,48 @@ async def handle_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     first_name = html.escape(update.effective_user.first_name or "User")
     days_left = await SubscriptionRepo.get_days_left(user_id)
     is_pro = days_left > 0
+    is_owner_user = is_owner(user_id)
 
     try:
         if query.data == "sup_main_menu":
-            open_tickets = await TicketRepo.count_open_tickets(user_id) if not is_pro else 0
+            open_tickets = await TicketRepo.count_open_tickets(user_id)
             await query.edit_message_text(
-                get_welcome_msg(first_name, is_pro, days_left),
-                reply_markup=get_support_dashboard(is_pro, open_tickets),
+                get_welcome_msg(first_name, is_pro, days_left, open_tickets, is_owner_user),
+                reply_markup=get_support_dashboard(is_pro, open_tickets, is_owner_user),
                 parse_mode="HTML",
             )
 
         elif query.data == "sup_status":
-            status = f"🟢 <b>Active</b> — {days_left} days remaining" if is_pro else "🔴 <b>Inactive</b> — Standard Tier"
-            pro_features = (
-                "\n<b>Pro Features:</b>\n"
-                "• 15 open tickets (vs 3 free)\n"
-                "• AI auto-response\n"
-                "• Priority support\n"
-                "• Custom FAQ builder\n"
-                "• Canned responses\n"
-                "• Analytics\n"
-                "• Auto-close tickets\n"
-                "• Satisfaction ratings"
-            )
+            if is_owner_user:
+                status = "👑 <b>OWNER</b> - Full Access"
+                features = (
+                    "\n<b>Owner Features:</b>\n"
+                    "• Unlimited tickets\n"
+                    "• All Pro features\n"
+                    "• Admin panel\n"
+                    "• View all tickets\n"
+                    "• Manage FAQs\n"
+                    "• Resolve tickets"
+                )
+            elif is_pro:
+                status = f"🟢 <b>Active</b> — {days_left} days remaining"
+                features = (
+                    "\n<b>Pro Features:</b>\n"
+                    "• 15 open tickets (vs 3 free)\n"
+                    "• AI auto-response\n"
+                    "• Priority support\n"
+                    "• Custom FAQ builder\n"
+                    "• Canned responses\n"
+                    "• Analytics\n"
+                    "• Auto-close tickets\n"
+                    "• Satisfaction ratings"
+                )
+            else:
+                status = "🔴 <b>Inactive</b> — Standard Tier"
+                features = ""
             await query.edit_message_text(
                 f"<b>💎 Zenith Pro</b>\n━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
-                f"<b>Status:</b> {status}\n{pro_features}\n\n"
+                f"<b>Status:</b> {status}{features}\n\n"
                 f"<b>Activation:</b>\n<code>/activate ZENITH-XXXX-XXXX</code>\n\n"
                 f"<i>User ID: {user_id}</i>",
                 reply_markup=get_back_button(),
@@ -322,7 +327,7 @@ async def handle_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
 
         elif query.data == "sup_faq":
-            faqs = await FAQRepo.get_all_faqs(limit=50 if is_pro else 10)
+            faqs = await FAQRepo.get_all_faqs(limit=50 if (is_pro or is_owner_user) else 10)
             if not faqs:
                 await query.edit_message_text(
                     "❓ <b>FAQ</b>\n\nNo FAQ entries available.",
@@ -346,7 +351,7 @@ async def handle_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         elif query.data == "sup_stats":
-            if not is_pro:
+            if not is_pro and not is_owner_user:
                 await query.edit_message_text(
                     "🔒 <b>Pro Feature: Analytics</b>\n\nUpgrade to Pro to view ticket statistics.",
                     reply_markup=get_back_button(),
@@ -368,7 +373,7 @@ async def handle_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         elif query.data == "sup_canned":
-            if not is_pro:
+            if not is_pro and not is_owner_user:
                 await query.edit_message_text(
                     "🔒 <b>Pro Feature: Canned Responses</b>\n\nUpgrade to Pro to access saved reply templates.",
                     reply_markup=get_back_button(),
@@ -388,10 +393,10 @@ async def handle_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.edit_message_text("⚠️ Ticket not found.", reply_markup=get_back_button())
                 return
             
-            is_owner = ticket.user_id == user_id
+            is_ticket_owner = ticket.user_id == user_id
             await query.edit_message_text(
-                get_ticket_status_msg(ticket, is_pro),
-                reply_markup=get_ticket_detail_keyboard(ticket.id, is_owner, is_pro, user_id == ADMIN_USER_ID),
+                get_ticket_status_msg(ticket, is_pro, is_owner_user),
+                reply_markup=get_ticket_detail_keyboard(ticket.id, is_owner_user, is_pro, is_owner_user, is_ticket_owner),
                 parse_mode="HTML",
             )
 
@@ -411,7 +416,10 @@ async def handle_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif query.data.startswith("sup_close_"):
             ticket_id = int(query.data.split("_")[-1])
-            success = await TicketRepo.close_ticket(ticket_id, user_id)
+            if is_owner_user:
+                success = await TicketRepo.admin_close_ticket(ticket_id)
+            else:
+                success = await TicketRepo.close_ticket(ticket_id, user_id)
             if success:
                 await query.edit_message_text(
                     f"✅ Ticket #{ticket_id} closed.",
@@ -427,7 +435,7 @@ async def handle_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif query.data.startswith("sup_priority_"):
             ticket_id = int(query.data.split("_")[-1])
-            if not is_pro:
+            if not is_pro and not is_owner_user:
                 await query.edit_message_text(
                     "🔒 Pro feature.",
                     reply_markup=get_back_button(),
@@ -453,11 +461,41 @@ async def handle_dashboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif query.data.startswith("sup_resolve_"):
             ticket_id = int(query.data.split("_")[-1])
-            if user_id != ADMIN_USER_ID:
+            if not is_owner_user:
                 await query.edit_message_text("⛔ Admin only.", reply_markup=get_back_button())
                 return
             await query.edit_message_text(
                 f"✅ Use /resolve {ticket_id} [response] to resolve this ticket.",
+                reply_markup=get_back_button(),
+                parse_mode="HTML",
+            )
+
+        elif query.data == "sup_all_tickets":
+            if not is_owner_user:
+                await query.edit_message_text("⛔ Admin only.", reply_markup=get_back_button())
+                return
+            tickets = await TicketRepo.get_all_tickets(limit=50)
+            if not tickets:
+                await query.edit_message_text(
+                    "🎫 No tickets yet.",
+                    reply_markup=get_back_button(),
+                    parse_mode="HTML",
+                )
+            else:
+                await query.edit_message_text(
+                    "🎫 <b>All Tickets (Admin View)</b>",
+                    reply_markup=get_all_tickets_keyboard(tickets),
+                    parse_mode="HTML",
+                )
+
+        elif query.data == "sup_add_faq_admin":
+            if not is_owner_user:
+                await query.edit_message_text("⛔ Admin only.", reply_markup=get_back_button())
+                return
+            await query.edit_message_text(
+                "➕ <b>Add FAQ (Admin)</b>\n\n"
+                "Use command: <code>/addfaq [question] | [answer]</code>\n\n"
+                "Example: <code>/addfaq How to activate? | Use /activate [KEY]</code>",
                 reply_markup=get_back_button(),
                 parse_mode="HTML",
             )
@@ -499,18 +537,73 @@ async def start_service():
     bot_app.add_handler(CommandHandler("faq", cmd_faq))
     bot_app.add_handler(CommandHandler("close", cmd_close))
     bot_app.add_handler(CommandHandler("activate", cmd_activate))
-    bot_app.add_handler(CommandHandler("keygen", cmd_keygen))
-    bot_app.add_handler(CommandHandler("extend", cmd_extend))
     
-    bot_app.add_handler(CommandHandler("priority", lambda u, c: cmd_priority(u, c, True)))
-    bot_app.add_handler(CommandHandler("savereply", lambda u, c: cmd_savereply(u, c, True)))
-    bot_app.add_handler(CommandHandler("replies", lambda u, c: cmd_replies(u, c, True)))
-    bot_app.add_handler(CommandHandler("reply", lambda u, c: cmd_reply(u, c, True)))
-    bot_app.add_handler(CommandHandler("rate", lambda u, c: cmd_rate(u, c, True)))
-    bot_app.add_handler(CommandHandler("stats", lambda u, c: cmd_stats(u, c, True)))
-    bot_app.add_handler(CommandHandler("resolve", lambda u, c: cmd_resolve(u, c, True)))
-    bot_app.add_handler(CommandHandler("addfaq", lambda u, c: cmd_addfaq(u, c, True, u.effective_user.id == ADMIN_USER_ID)))
-    bot_app.add_handler(CommandHandler("delfaq", lambda u, c: cmd_delfaq(u, c, u.effective_user.id == ADMIN_USER_ID)))
+    async def wrap_priority(u, c):
+        user_id = u.effective_user.id
+        days_left = await SubscriptionRepo.get_days_left(user_id)
+        is_pro = days_left > 0
+        is_owner_user = is_owner(user_id)
+        await cmd_priority(u, c, is_pro, is_owner_user)
+    
+    async def wrap_savereply(u, c):
+        user_id = u.effective_user.id
+        days_left = await SubscriptionRepo.get_days_left(user_id)
+        is_pro = days_left > 0
+        is_owner_user = is_owner(user_id)
+        await cmd_savereply(u, c, is_pro, is_owner_user)
+    
+    async def wrap_replies(u, c):
+        user_id = u.effective_user.id
+        days_left = await SubscriptionRepo.get_days_left(user_id)
+        is_pro = days_left > 0
+        is_owner_user = is_owner(user_id)
+        await cmd_replies(u, c, is_pro, is_owner_user)
+    
+    async def wrap_reply(u, c):
+        user_id = u.effective_user.id
+        days_left = await SubscriptionRepo.get_days_left(user_id)
+        is_pro = days_left > 0
+        is_owner_user = is_owner(user_id)
+        await cmd_reply(u, c, is_pro, is_owner_user)
+    
+    async def wrap_rate(u, c):
+        user_id = u.effective_user.id
+        days_left = await SubscriptionRepo.get_days_left(user_id)
+        is_pro = days_left > 0
+        is_owner_user = is_owner(user_id)
+        await cmd_rate(u, c, is_pro, is_owner_user)
+    
+    async def wrap_stats(u, c):
+        user_id = u.effective_user.id
+        days_left = await SubscriptionRepo.get_days_left(user_id)
+        is_pro = days_left > 0
+        is_owner_user = is_owner(user_id)
+        await cmd_stats(u, c, is_pro, is_owner_user)
+    
+    async def wrap_resolve(u, c):
+        user_id = u.effective_user.id
+        is_owner_user = is_owner(user_id)
+        await cmd_resolve(u, c, is_owner_user)
+    
+    async def wrap_addfaq(u, c):
+        user_id = u.effective_user.id
+        is_owner_user = is_owner(user_id)
+        await cmd_addfaq(u, c, False, is_owner_user)
+    
+    async def wrap_delfaq(u, c):
+        user_id = u.effective_user.id
+        is_owner_user = is_owner(user_id)
+        await cmd_delfaq(u, c, is_owner_user)
+
+    bot_app.add_handler(CommandHandler("priority", wrap_priority))
+    bot_app.add_handler(CommandHandler("savereply", wrap_savereply))
+    bot_app.add_handler(CommandHandler("replies", wrap_replies))
+    bot_app.add_handler(CommandHandler("reply", wrap_reply))
+    bot_app.add_handler(CommandHandler("rate", wrap_rate))
+    bot_app.add_handler(CommandHandler("stats", wrap_stats))
+    bot_app.add_handler(CommandHandler("resolve", wrap_resolve))
+    bot_app.add_handler(CommandHandler("addfaq", wrap_addfaq))
+    bot_app.add_handler(CommandHandler("delfaq", wrap_delfaq))
     
     bot_app.add_handler(CallbackQueryHandler(handle_dashboard))
 

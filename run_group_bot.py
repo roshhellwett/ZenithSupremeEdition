@@ -9,7 +9,7 @@ from telegram.ext import (
 )
 
 from core.logger import setup_logger
-from core.config import GROUP_BOT_TOKEN, WEBHOOK_URL, WEBHOOK_SECRET, ADMIN_USER_ID
+from core.config import GROUP_BOT_TOKEN, WEBHOOK_URL, WEBHOOK_SECRET
 from zenith_crypto_bot.repository import SubscriptionRepo
 from zenith_group_bot.repository import (
     init_group_db, dispose_group_engine,
@@ -87,31 +87,6 @@ async def cmd_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     key = context.args[0].strip()
     success, msg = await SubscriptionRepo.redeem_key(update.effective_user.id, key)
-    await update.message.reply_text(msg, parse_mode="HTML")
-
-
-async def cmd_keygen(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_USER_ID:
-        return await update.message.reply_text("⛔ Unauthorized.")
-    try:
-        days = int(context.args[0]) if context.args else 30
-    except ValueError:
-        return await update.message.reply_text("⚠️ Invalid day count.", parse_mode="HTML")
-    key = await SubscriptionRepo.generate_key(days)
-    await update.message.reply_text(f"🔑 Key: <code>{key}</code> ({days} days)", parse_mode="HTML")
-
-
-async def cmd_extend(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id != ADMIN_USER_ID:
-        return await update.message.reply_text("⛔ Unauthorized.")
-    if not context.args:
-        return await update.message.reply_text("Usage: <code>/extend [UID] [DAYS]</code>", parse_mode="HTML")
-    try:
-        uid = int(context.args[0])
-        days = int(context.args[1]) if len(context.args) > 1 else 30
-    except ValueError:
-        return await update.message.reply_text("⚠️ Invalid input.")
-    success, msg = await SubscriptionRepo.extend_subscription(uid, days)
     await update.message.reply_text(msg, parse_mode="HTML")
 
 
@@ -236,8 +211,6 @@ async def start_service():
     bot_app.add_handler(CommandHandler("forgive", cmd_forgive))
     bot_app.add_handler(CommandHandler("reset", cmd_reset))
     bot_app.add_handler(CommandHandler("activate", cmd_activate))
-    bot_app.add_handler(CommandHandler("keygen", cmd_keygen))
-    bot_app.add_handler(CommandHandler("extend", cmd_extend))
 
     bot_app.add_handler(CommandHandler("addword", cmd_addword))
     bot_app.add_handler(CommandHandler("delword", cmd_delword))

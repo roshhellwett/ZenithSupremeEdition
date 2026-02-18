@@ -3,6 +3,7 @@ from telegram.ext import ContextTypes
 
 from core.validators import validate_priority
 from core.animation import send_typing_action
+from core.config import is_owner
 from zenith_support_bot.repository import TicketRepo, FAQRepo, CannedRepo
 from zenith_support_bot.ui import (
     get_priority_keyboard, get_canned_keyboard, get_faq_keyboard,
@@ -12,7 +13,8 @@ from zenith_support_bot.ui import (
 )
 
 
-async def cmd_priority(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro: bool):
+async def cmd_priority(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro: bool, is_owner_user: bool = False):
+    is_pro = is_pro or is_owner_user
     if not is_pro:
         msg, kb = get_pro_feature_msg("Priority Support")
         await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
@@ -71,7 +73,8 @@ async def cmd_priority(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pr
         )
 
 
-async def cmd_savereply(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro: bool):
+async def cmd_savereply(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro: bool, is_owner_user: bool = False):
+    is_pro = is_pro or is_owner_user
     if not is_pro:
         msg, kb = get_pro_feature_msg("Canned Responses")
         await update.message.reply_text(msg, reply_markup=kb, parse_mode="HTML")
@@ -134,7 +137,8 @@ async def cmd_savereply(update: Update, context: ContextTypes.DEFAULT_TYPE, is_p
     )
 
 
-async def cmd_replies(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro: bool):
+async def cmd_replies(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro: bool, is_owner_user: bool = False):
+    is_pro = is_pro or is_owner_user
     if not is_pro:
         await update.message.reply_text(
             "🔒 <b>Pro Feature: Canned Responses</b>\n\n"
@@ -159,7 +163,8 @@ async def cmd_replies(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro
     )
 
 
-async def cmd_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro: bool):
+async def cmd_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro: bool, is_owner_user: bool = False):
+    is_pro = is_pro or is_owner_user
     if not is_pro:
         await update.message.reply_text(
             "🔒 <b>Pro Feature: Canned Responses</b>\n\n"
@@ -202,6 +207,7 @@ async def cmd_reply(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro: 
 
 
 async def cmd_addfaq(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro: bool, is_admin: bool = False):
+    is_admin = is_admin or is_owner(update.effective_user.id)
     if not is_admin:
         await update.message.reply_text("⛔ Admin only.")
         return
@@ -246,6 +252,7 @@ async def cmd_addfaq(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro:
 
 
 async def cmd_delfaq(update: Update, context: ContextTypes.DEFAULT_TYPE, is_admin: bool = False):
+    is_admin = is_admin or is_owner(update.effective_user.id)
     if not is_admin:
         await update.message.reply_text("⛔ Admin only.")
         return
@@ -267,7 +274,8 @@ async def cmd_delfaq(update: Update, context: ContextTypes.DEFAULT_TYPE, is_admi
         await update.message.reply_text("⚠️ FAQ not found.")
 
 
-async def cmd_rate(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro: bool):
+async def cmd_rate(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro: bool, is_owner_user: bool = False):
+    is_pro = is_pro or is_owner_user
     if not is_pro:
         await update.message.reply_text(
             "🔒 <b>Pro Feature: Satisfaction Ratings</b>\n\n"
@@ -319,7 +327,8 @@ async def cmd_rate(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro: b
         await update.message.reply_text("⚠️ Failed to submit rating.")
 
 
-async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro: bool):
+async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro: bool, is_owner_user: bool = False):
+    is_pro = is_pro or is_owner_user
     if not is_pro:
         await update.message.reply_text(
             "🔒 <b>Pro Feature: Ticket Analytics</b>\n\n"
@@ -345,6 +354,7 @@ async def cmd_stats(update: Update, context: ContextTypes.DEFAULT_TYPE, is_pro: 
 
 
 async def cmd_resolve(update: Update, context: ContextTypes.DEFAULT_TYPE, is_admin: bool = False):
+    is_admin = is_admin or is_owner(update.effective_user.id)
     if not is_admin:
         await update.message.reply_text("⛔ Admin only.")
         return
