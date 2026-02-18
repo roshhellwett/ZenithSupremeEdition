@@ -28,6 +28,7 @@ from zenith_support_bot.pro_handlers import (
 from zenith_support_bot.user_handlers import (
     cmd_my_tickets, cmd_ticket_status,
     handle_ticket_reply_callback, handle_ticket_reply_message,
+    handle_ticket_close_callback,
 )
 from zenith_support_bot.notifications import set_notification_bot
 from zenith_support_bot.scheduler import start_ticket_scheduler, stop_ticket_scheduler

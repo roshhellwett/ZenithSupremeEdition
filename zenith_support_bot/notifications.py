@@ -56,7 +56,7 @@ async def send_24h_reminder(user_id: int, ticket_id: int, subject: str):
     try:
         keyboard = [
             [InlineKeyboardButton("💬 Reply Now", callback_data=f"ticket_reply_{ticket_id}")],
-            [InlineKeyboardButton("✅ Mark as Resolved", callback_data=f"ticket_close_{ticket_id}")],
+            [InlineKeyboardButton("✅ Mark as Resolved", callback_data=f"ticket_close_user_{ticket_id}")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 

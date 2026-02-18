@@ -112,7 +112,7 @@ async def cmd_ticket_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if ticket.status in ["open", "in_progress", "resolved"]:
         keyboard.append([InlineKeyboardButton("💬 Reply to Ticket", callback_data=f"ticket_reply_{ticket.id}")])
     if ticket.status in ["open", "in_progress"]:
-        keyboard.append([InlineKeyboardButton("❌ Close Ticket", callback_data=f"ticket_close_{ticket.id}")])
+        keyboard.append([InlineKeyboardButton("❌ Close Ticket", callback_data=f"ticket_close_user_{ticket.id}")])
 
     await update.message.reply_text(
         "\n".join(lines),
@@ -140,6 +140,37 @@ async def handle_ticket_reply_callback(update: Update, context: ContextTypes.DEF
         "Type your response below:",
         parse_mode="HTML",
     )
+
+
+async def handle_ticket_close_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    
+    ticket_id = int(query.data.split("_")[-1])
+    ticket = await TicketRepo.get_ticket(ticket_id)
+    
+    if not ticket or ticket.user_id != update.effective_user.id:
+        await query.edit_message_text("⛔ Ticket not found or access denied.")
+        return
+    
+    if ticket.status == "closed":
+        await query.edit_message_text("⛔ This ticket is already closed.")
+        return
+    
+    success = await TicketRepo.close_ticket(ticket_id, update.effective_user.id)
+    
+    if success:
+        await query.edit_message_text(
+            f"✅ <b>Ticket #{ticket.id} Closed</b>\n\n"
+            "This ticket has been marked as resolved/closed.\n\n"
+            "Thank you for using our support!",
+            parse_mode="HTML",
+        )
+    else:
+        await query.edit_message_text(
+            "⚠️ Failed to close ticket. Please try again.",
+            parse_mode="HTML",
+        )
 
 
 async def handle_ticket_reply_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
