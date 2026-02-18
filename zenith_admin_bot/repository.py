@@ -233,6 +233,248 @@ class MonitoringRepo:
                 "expires_at": sub.expires_at,
             }
 
+    @staticmethod
+    async def get_all_tickets_admin(status: str = None, limit: int = 50, offset: int = 0) -> list:
+        from zenith_support_bot.models import SupportTicket
+        from sqlalchemy import desc
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(SupportTicket).order_by(desc(SupportTicket.created_at))
+            if status:
+                stmt = stmt.where(SupportTicket.status == status)
+            stmt = stmt.limit(limit).offset(offset)
+            return (await session.execute(stmt)).scalars().all()
+
+    @staticmethod
+    async def get_ticket_by_id(ticket_id: int):
+        from zenith_support_bot.models import SupportTicket
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(SupportTicket).where(SupportTicket.id == ticket_id)
+            return (await session.execute(stmt)).scalar_one_or_none()
+
+    @staticmethod
+    async def get_stale_tickets(days: int = 2) -> list:
+        from zenith_support_bot.models import SupportTicket
+        from utils.time_util import utc_now
+
+        cutoff = utc_now() - timedelta(days=days)
+        async with AsyncSessionLocal() as session:
+            stmt = select(SupportTicket).where(
+                SupportTicket.status.in_(["open", "in_progress"]),
+                SupportTicket.updated_at < cutoff,
+            ).order_by(SupportTicket.created_at)
+            return (await session.execute(stmt)).scalars().all()
+
+    @staticmethod
+    async def get_ticket_metrics() -> dict:
+        from zenith_support_bot.models import SupportTicket
+        from sqlalchemy import func
+        from utils.time_util import utc_now
+
+        async with AsyncSessionLocal() as session:
+            total = (await session.execute(select(func.count()).select_from(SupportTicket))).scalar() or 0
+            
+            open_cnt = (await session.execute(select(func.count()).select_from(SupportTicket).where(SupportTicket.status == "open"))).scalar() or 0
+            in_progress = (await session.execute(select(func.count()).select_from(SupportTicket).where(SupportTicket.status == "in_progress"))).scalar() or 0
+            resolved = (await session.execute(select(func.count()).select_from(SupportTicket).where(SupportTicket.status == "resolved"))).scalar() or 0
+            closed = (await session.execute(select(func.count()).select_from(SupportTicket).where(SupportTicket.status == "closed"))).scalar() or 0
+            
+            cutoff_2d = utc_now() - timedelta(days=2)
+            stale = (await session.execute(select(func.count()).select_from(SupportTicket).where(
+                SupportTicket.status.in_(["open", "in_progress"]),
+                SupportTicket.updated_at < cutoff_2d
+            ))).scalar() or 0
+            
+            cutoff_7d = utc_now() - timedelta(days=7)
+            resolved_7d = (await session.execute(select(func.count()).select_from(SupportTicket).where(
+                SupportTicket.status == "resolved",
+                SupportTicket.resolved_at >= cutoff_7d
+            ))).scalar() or 0
+            
+            avg_rating_stmt = select(func.avg(SupportTicket.rating)).where(SupportTicket.rating.isnot(None))
+            avg_rating = (await session.execute(avg_rating_stmt)).scalar() or 0
+            
+            return {
+                "total": total,
+                "open": open_cnt,
+                "in_progress": in_progress,
+                "resolved": resolved,
+                "closed": closed,
+                "stale": stale,
+                "resolved_7d": resolved_7d,
+                "avg_rating": round(avg_rating, 2) if avg_rating else 0,
+            }
+
+    @staticmethod
+    async def search_users(query: str, limit: int = 20) -> list:
+        from zenith_crypto_bot.models import CryptoUser
+
+        async with AsyncSessionLocal() as session:
+            try:
+                user_id = int(query)
+                stmt = select(CryptoUser).where(CryptoUser.user_id == user_id).limit(limit)
+            except ValueError:
+                stmt = select(CryptoUser).limit(limit)
+            return (await session.execute(stmt)).scalars().all()
+
+    @staticmethod
+    async def get_all_groups(limit: int = 50, offset: int = 0) -> list:
+        from zenith_group_bot.models import GroupSettings
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(GroupSettings).where(GroupSettings.is_active == True).order_by(GroupSettings.chat_id.desc()).limit(limit).offset(offset)
+            return (await session.execute(stmt)).scalars().all()
+
+    @staticmethod
+    async def search_groups(query: str, limit: int = 20) -> list:
+        from zenith_group_bot.models import GroupSettings
+
+        async with AsyncSessionLocal() as session:
+            try:
+                chat_id = int(query)
+                stmt = select(GroupSettings).where(GroupSettings.chat_id == chat_id).limit(limit)
+            except ValueError:
+                stmt = select(GroupSettings).where(GroupSettings.group_name.ilike(f"%{query}%")).limit(limit)
+            return (await session.execute(stmt)).scalars().all()
+
+    @staticmethod
+    async def get_group_count() -> int:
+        from zenith_group_bot.models import GroupSettings
+        from sqlalchemy import func
+
+        async with AsyncSessionLocal() as session:
+            return (await session.execute(select(func.count()).select_from(GroupSettings).where(GroupSettings.is_active == True))).scalar() or 0
+
+    @staticmethod
+    async def get_all_users(limit: int = 100, offset: int = 0) -> list:
+        from zenith_crypto_bot.models import CryptoUser
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(CryptoUser).order_by(CryptoUser.user_id.desc()).limit(limit).offset(offset)
+            return (await session.execute(stmt)).scalars().all()
+
+    @staticmethod
+    async def get_user_count() -> int:
+        from zenith_crypto_bot.models import CryptoUser
+        from sqlalchemy import func
+
+        async with AsyncSessionLocal() as session:
+            return (await session.execute(select(func.count()).select_from(CryptoUser))).scalar() or 0
+
+    @staticmethod
+    async def generate_bulk_keys(count: int, days: int) -> list:
+        from zenith_crypto_bot.models import ActivationKey
+        import uuid
+
+        keys = []
+        async with AsyncSessionLocal() as session:
+            for _ in range(count):
+                key_str = f"ZENITH-{uuid.uuid4().hex[:8].upper()}-{uuid.uuid4().hex[:4].upper()}"
+                key = ActivationKey(key_string=key_str, duration_days=days)
+                session.add(key)
+                keys.append(key_str)
+            await session.commit()
+        return keys
+
+    @staticmethod
+    async def get_key_usage_history(limit: int = 20) -> list:
+        from zenith_crypto_bot.models import ActivationKey
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(ActivationKey).where(ActivationKey.is_used == True).order_by(ActivationKey.used_at.desc()).limit(limit)
+            return (await session.execute(stmt)).scalars().all()
+
+    @staticmethod
+    async def get_faq_count() -> int:
+        from zenith_support_bot.models import FAQEntry
+        from sqlalchemy import func
+
+        async with AsyncSessionLocal() as session:
+            return (await session.execute(select(func.count()).select_from(FAQEntry))).scalar() or 0
+
+    @staticmethod
+    async def get_canned_count() -> int:
+        from zenith_support_bot.models import CannedResponse
+        from sqlalchemy import func
+
+        async with AsyncSessionLocal() as session:
+            return (await session.execute(select(func.count()).select_from(CannedResponse))).scalar() or 0
+
+    @staticmethod
+    async def get_db_stats() -> dict:
+        from zenith_crypto_bot.models import CryptoUser, Subscription, ActivationKey
+        from zenith_support_bot.models import SupportTicket, FAQEntry, CannedResponse
+        from zenith_group_bot.models import GroupSettings, ModerationLog
+        from sqlalchemy import func
+
+        async with AsyncSessionLocal() as session:
+            stats = {}
+            
+            stats["crypto_users"] = (await session.execute(select(func.count()).select_from(CryptoUser))).scalar() or 0
+            stats["subscriptions"] = (await session.execute(select(func.count()).select_from(Subscription))).scalar() or 0
+            stats["activation_keys"] = (await session.execute(select(func.count()).select_from(ActivationKey))).scalar() or 0
+            stats["support_tickets"] = (await session.execute(select(func.count()).select_from(SupportTicket))).scalar() or 0
+            stats["faqs"] = (await session.execute(select(func.count()).select_from(FAQEntry))).scalar() or 0
+            stats["canned_responses"] = (await session.execute(select(func.count()).select_from(CannedResponse))).scalar() or 0
+            stats["groups"] = (await session.execute(select(func.count()).select_from(GroupSettings))).scalar() or 0
+            stats["moderation_logs"] = (await session.execute(select(func.count()).select_from(ModerationLog))).scalar() or 0
+            
+            return stats
+
+    @staticmethod
+    async def get_revenue_report() -> dict:
+        from zenith_crypto_bot.models import Subscription, ActivationKey
+        from sqlalchemy import func
+        from utils.time_util import utc_now
+
+        async with AsyncSessionLocal() as session:
+            now = datetime.now(timezone.utc)
+            month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+            
+            active_now = (await session.execute(select(func.count()).select_from(Subscription).where(Subscription.expires_at > now))).scalar() or 0
+            
+            keys_this_month = (await session.execute(select(func.count()).select_from(ActivationKey).where(
+                ActivationKey.is_used == True,
+                ActivationKey.used_at >= month_start
+            ))).scalar() or 0
+            
+            total_keys_used = (await session.execute(select(func.count()).select_from(ActivationKey).where(ActivationKey.is_used == True))).scalar() or 0
+            
+            return {
+                "active_subscriptions": active_now,
+                "keys_redeemed_month": keys_this_month,
+                "total_keys_redeemed": total_keys_used,
+                "estimated_mrr": active_now * 149,
+                "estimated_annual": active_now * 149 * 12,
+            }
+
+    @staticmethod
+    async def get_all_user_ids() -> list:
+        from zenith_crypto_bot.models import CryptoUser
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(CryptoUser.user_id)
+            return [r[0] for r in (await session.execute(stmt)).all()]
+
+    @staticmethod
+    async def get_all_pro_user_ids() -> list:
+        from zenith_crypto_bot.models import Subscription
+        from sqlalchemy import and_
+
+        async with AsyncSessionLocal() as session:
+            now = datetime.now(timezone.utc)
+            stmt = select(Subscription.user_id).where(Subscription.expires_at > now)
+            return [r[0] for r in (await session.execute(stmt)).all()]
+
+    @staticmethod
+    async def get_all_group_chat_ids() -> list:
+        from zenith_group_bot.models import GroupSettings
+
+        async with AsyncSessionLocal() as session:
+            stmt = select(GroupSettings.chat_id).where(GroupSettings.is_active == True)
+            return [r[0] for r in (await session.execute(stmt)).all()]
+
 
 async def dispose_admin_engine():
     await engine.dispose()

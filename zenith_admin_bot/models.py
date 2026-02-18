@@ -8,10 +8,21 @@ AdminBase = declarative_base()
 
 class ActionType(str, enum.Enum):
     KEYGEN = "keygen"
+    KEYGEN_BULK = "keygen_bulk"
     EXTEND = "extend"
     REVOKE = "revoke"
     BROADCAST = "broadcast"
     USER_LOOKUP = "user_lookup"
+    USER_SEARCH = "user_search"
+    GROUP_LOOKUP = "group_lookup"
+    TICKET_REPLY = "ticket_reply"
+    TICKET_CLOSE = "ticket_close"
+    FAQ_ADD = "faq_add"
+    FAQ_DELETE = "faq_delete"
+    CANNED_ADD = "canned_add"
+    CANNED_DELETE = "canned_delete"
+    BROADCAST_SCHEDULED = "broadcast_scheduled"
+    GROUP_DISABLE = "group_disable"
     BOT_REGISTER = "bot_register"
     BOT_UNREGISTER = "bot_unregister"
 
