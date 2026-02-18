@@ -10,8 +10,6 @@ Zenith is a multi-bot Telegram platform that delivers real-time blockchain intel
 
 ---
 
-
-
 ## 🤖 Bots
 
 | Bot | Purpose |
@@ -19,6 +17,7 @@ Zenith is a multi-bot Telegram platform that delivers real-time blockchain intel
 | [**Zenith Crypto Bot**](https://t.me/zenithwhalebot) | On-chain analytics, token security scans, whale tracking, price alerts, portfolio P&L |
 | [**Zenith Group Bot**](https://t.me/zenithgroupbot) | Automated group moderation — abuse filtering, spam detection, flood control |
 | [**Zenith AI Bot**](https://t.me/zenithcodexbot) | AI assistant powered by Groq LLM with web search and YouTube transcript analysis |
+| [**Zenith Support Bot**](https://t.me/zenithassitancebot) | AI assistant powered by Groq LLM to help to use other bots and raise queries regarding the bots |
 
 ---
 
@@ -50,8 +49,6 @@ Zenith is a multi-bot Telegram platform that delivers real-time blockchain intel
 | New Pair Scanner | Full pool addresses, Etherscan tx links, DexScreener charts |
 | Gas Fee Optimizer | Current gas + priority tiers + trading recommendations |
 
----
-
 ## 🤖 Zenith AI Bot — Tier Comparison
 
 ### 📊 Standard (Free)
@@ -79,8 +76,6 @@ Zenith is a multi-bot Telegram platform that delivers real-time blockchain intel
 | Code Interpreter | Code generation, debugging, and explanation |
 | Image Prompt Crafter | Generate optimized prompts for AI image generators |
 | Chat History | Persistent conversation memory with `/history` and `/clear` |
-
----
 
 ## 🛡️ Zenith Group Bot — Tier Comparison
 
@@ -112,8 +107,6 @@ Zenith is a multi-bot Telegram platform that delivers real-time blockchain intel
 | Scheduled Messages | **10** daily recurring messages per group (UTC) |
 | Custom Welcome | Personalized welcome with `{name}`, `{username}`, `{group}` variables + optional DM |
 | Audit Log | Full action history — deletions, bans, quarantines, raid events (up to 50 entries) |
-
----
 
 ### 🔑 Activation & Renewal (All Bots)
 
@@ -156,10 +149,6 @@ projectmonolith/
 ├── zenith_group_bot/          # Group moderation module
 └── utils/                     # Shared utilities
 ```
-
-## 📄 License
-
-MIT
 
 ---
 
