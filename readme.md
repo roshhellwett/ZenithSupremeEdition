@@ -1,4 +1,4 @@
-# PROJECT MONOLITH IS A BUNDLE TELEGRAM BOT PACK
+# PROJECT MONOLITH 
 
 Zenith is a multi-bot Telegram platform that delivers real-time blockchain intelligence, automated content moderation, and AI-powered conversations — all running on a single monolithic FastAPI gateway.
 
